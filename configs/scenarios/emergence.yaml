@@ -1,0 +1,12 @@
+# Scénario B3 « émergence » : un contexte commun « tout le monde retire » doit apparaître.
+herite: ../principal.yaml
+nom: emergence
+
+rumeur:
+  force: 0.80
+
+population:
+  part_connectes: 0.30
+
+leviers:
+  garantie: false

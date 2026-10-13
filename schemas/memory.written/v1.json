@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/memory.written/v1.json",
+  "title": "Charge utile de memory.written (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "memoire_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nature": {
+      "enum": [
+        "observation",
+        "conversation",
+        "guichet",
+        "reflexion"
+      ]
+    },
+    "texte": {
+      "type": "string",
+      "minLength": 1
+    },
+    "importance": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "agent_id",
+    "memoire_id",
+    "nature",
+    "texte",
+    "importance",
+    "sources"
+  ],
+  "description": "Souvenir épisodique d'un agent LLM (A1). 'sources' = event_id à l'origine du souvenir."
+}

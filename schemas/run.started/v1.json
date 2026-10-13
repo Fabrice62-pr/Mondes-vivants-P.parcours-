@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/run.started/v1.json",
+  "title": "Charge utile de run.started (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "graine": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mode": {
+      "enum": [
+        "synchrone",
+        "asynchrone"
+      ]
+    },
+    "config_nom": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "population": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "horloge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pas_min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "debut_jour": {
+          "enum": [
+            "lundi",
+            "mardi",
+            "mercredi",
+            "jeudi",
+            "vendredi",
+            "samedi",
+            "dimanche"
+          ]
+        },
+        "duree_jours": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "t_sim_article": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "pas_min",
+        "debut_jour",
+        "duree_jours",
+        "t_sim_article"
+      ]
+    },
+    "attribution": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "enum": [
+              "deposant",
+              "employe",
+              "direction"
+            ]
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "regles"
+            ]
+          },
+          "tier": {
+            "enum": [
+              "grand",
+              "petit",
+              null
+            ]
+          },
+          "modele": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fournisseur": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profil": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nom": {
+            "type": "string",
+            "minLength": 1
+          },
+          "depot": {
+            "type": "number",
+            "minimum": 0
+          },
+          "connecte": {
+            "type": "boolean"
+          },
+          "quartier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "domicile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "x",
+              "z"
+            ],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "description": "Coordonnées monde (mètres)"
+          }
+        },
+        "required": [
+          "agent_id",
+          "role",
+          "type",
+          "tier",
+          "modele",
+          "fournisseur",
+          "profil",
+          "nom",
+          "depot",
+          "connecte",
+          "quartier",
+          "domicile"
+        ]
+      }
+    }
+  },
+  "required": [
+    "graine",
+    "mode",
+    "config_nom",
+    "config_hash",
+    "population",
+    "horloge",
+    "attribution"
+  ],
+  "description": "Début d'un run : configuration et attribution FIGÉE des modèles (un agent ne change jamais de modèle)."
+}

@@ -1,0 +1,21 @@
+{
+  "description": "Géographie de la vallée de Brévanne, partagée par le moteur Python et Godot. Coordonnées « plan » : position monde (mètres) = plan × echelle. Nord = -z.",
+  "echelle": 1.75,
+  "lieux": [
+    {"id": "bourg",       "nom": "Agence du Bourg",        "x": -45.0, "z": -16.0, "type": "agence"},
+    {"id": "ag_marche",   "nom": "Agence du Marché",       "x": 8.0,   "z": 2.0,   "type": "agence"},
+    {"id": "zone",        "nom": "Agence Zone artisanale", "x": 58.0,  "z": 20.0,  "type": "agence"},
+    {"id": "cafe",        "nom": "Café",                   "x": -20.0, "z": -27.0, "type": "rencontre", "poids": 3.0},
+    {"id": "marche",      "nom": "Place du marché",        "x": 28.0,  "z": -14.0, "type": "rencontre", "poids": 3.0},
+    {"id": "ecole",       "nom": "École",                  "x": -10.0, "z": 38.0,  "type": "rencontre", "poids": 1.5},
+    {"id": "presse",      "nom": "Maison de la presse",    "x": -5.0,  "z": -14.0, "type": "rencontre", "poids": 1.5},
+    {"id": "boulangerie", "nom": "Boulangerie",            "x": -32.0, "z": -18.0, "type": "rencontre", "poids": 2.0}
+  ],
+  "quartiers": [
+    {"id": "q_bourg",   "x": -45.0, "z": -16.0, "maisons": 20, "r_min": 9.0,  "r_max": 22.0},
+    {"id": "q_cafe",    "x": -20.0, "z": -24.0, "maisons": 7,  "r_min": 8.0,  "r_max": 15.0},
+    {"id": "q_marche",  "x": 12.0,  "z": -4.0,  "maisons": 10, "r_min": 9.0,  "r_max": 19.0},
+    {"id": "q_ecole",   "x": -10.0, "z": 38.0,  "maisons": 7,  "r_min": 12.0, "r_max": 19.0},
+    {"id": "q_est",     "x": 40.0,  "z": -2.0,  "maisons": 6,  "r_min": 8.0,  "r_max": 17.0}
+  ]
+}

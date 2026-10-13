@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/article.published/v1.json",
+  "title": "Charge utile de article.published (v1)",
+  "description": "Parution d'un article de presse (la rumeur). Il est indexé dans la base de connaissances sous doc_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "titre",
+    "texte",
+    "force",
+    "doc_id",
+    "source"
+  ],
+  "properties": {
+    "titre": {
+      "type": "string",
+      "minLength": 1
+    },
+    "texte": {
+      "type": "string",
+      "minLength": 1
+    },
+    "force": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "enum": [
+        "presse",
+        "injection"
+      ]
+    }
+  }
+}

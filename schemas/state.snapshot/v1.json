@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/state.snapshot/v1.json",
+  "title": "Charge utile de state.snapshot (v1)",
+  "description": "Photographie complète de l'état courant, publiée à chaque pas dans le topic compacté guichet.state (clé « monde »). Permet à Godot de se (re)synchroniser à tout moment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agents",
+    "files",
+    "agences_ouvertes",
+    "caisse",
+    "leviers"
+  ],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "etat",
+          "lieu",
+          "peur",
+          "estime_autres",
+          "depot",
+          "retire",
+          "perdu"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "etat": {
+            "enum": [
+              "domicile",
+              "en_route",
+              "sur_place",
+              "vers_agence",
+              "en_file",
+              "attente_ouverture",
+              "parti"
+            ]
+          },
+          "lieu": {
+            "enum": [
+              "domicile",
+              "cafe",
+              "marche",
+              "ecole",
+              "presse",
+              "boulangerie",
+              "bourg",
+              "ag_marche",
+              "zone"
+            ]
+          },
+          "peur": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "estime_autres": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "depot": {
+            "type": "number",
+            "minimum": 0
+          },
+          "retire": {
+            "type": "boolean"
+          },
+          "perdu": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "agences_ouvertes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "caisse": {
+      "type": "object"
+    },
+    "leviers": {
+      "type": "object"
+    }
+  }
+}

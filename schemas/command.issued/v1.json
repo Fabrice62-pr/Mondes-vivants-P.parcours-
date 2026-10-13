@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/command.issued/v1.json",
+  "title": "Charge utile de command.issued (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "commande": {
+      "enum": [
+        "publier_communique",
+        "garantie",
+        "plafond_retrait",
+        "fermer_agence",
+        "rouvrir_agence",
+        "consigne_employe",
+        "injecter_rumeur",
+        "pertes_reelles",
+        "pause",
+        "reprendre",
+        "vitesse"
+      ]
+    },
+    "parametres": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "commande",
+    "parametres"
+  ],
+  "description": "Commande envoyée par l'utilisateur depuis Godot (topic guichet.commands)."
+}

@@ -1,0 +1,155 @@
+# Base de connaissances de Brévanne : ce que « tout le monde sait » dans la vallée (monde fictif).
+# Ces documents existent avant le run (t_sim_doc = null) et sont publics : tout agent LLM peut les
+# retrouver par recherche sémantique (RAG). Les documents publiés pendant le run (article, communiqués)
+# ne sont pas ici : un agent ne les connaît que s'il les a reçus (souvenirs, C6).
+#
+# Équilibre voulu : des documents rassurants, d'autres inquiétants, la plupart neutres. Le corpus ne
+# doit pas pousser à lui seul vers la panique ni vers le calme.
+
+documents:
+  - doc_id: caisse-histoire
+    titre: Histoire de la Caisse Coopérative de Brévanne
+    texte: >-
+      La Caisse Coopérative de Brévanne a été fondée en 1952 par des agriculteurs et des artisans de la
+      vallée. Chaque déposant en est sociétaire. Elle a traversé les crises de 1974, de 1993 et de 2008
+      sans jamais fermer ses guichets. Elle compte trois agences : le Bourg, le Marché et la Zone artisanale.
+
+  - doc_id: caisse-fonctionnement
+    titre: Comment la Caisse utilise les dépôts
+    texte: >-
+      Comme toute banque, la Caisse prête l'essentiel des dépôts aux commerces, aux ateliers et aux familles
+      de la vallée. Elle ne garde en caisse qu'une partie de l'argent déposé, de quoi faire face aux retraits
+      habituels. Les prêts ne peuvent pas être rappelés du jour au lendemain.
+
+  - doc_id: caisse-statuts-retraits
+    titre: Statuts de la Caisse, article 12 (retraits)
+    texte: >-
+      Les dépôts à vue peuvent être retirés à tout moment aux heures d'ouverture des agences, du lundi au
+      samedi de 9 h à 17 h. En cas de circonstances exceptionnelles, la direction peut limiter le montant
+      retiré par passage au guichet, pour une durée limitée.
+
+  - doc_id: caisse-solidite
+    titre: Rapport annuel de la Caisse, résumé
+    texte: >-
+      Le dernier rapport annuel indique des fonds propres conformes aux exigences réglementaires et un taux
+      d'impayés inférieur à la moyenne régionale. La Caisse est notée « solide » par l'inspection régionale
+      des établissements coopératifs.
+
+  - doc_id: caisse-gros-clients
+    titre: Les grands emprunteurs de la vallée
+    texte: >-
+      Les ateliers de la Zone artisanale sont les plus gros emprunteurs de la Caisse. Une loi régionale
+      interdit à une banque coopérative de prêter plus d'un dixième de ses fonds à un seul client, pour
+      qu'une défaillance isolée ne puisse pas la mettre en danger.
+
+  - doc_id: garantie-loi
+    titre: La garantie publique des dépôts
+    texte: >-
+      Une garantie publique peut être décidée par l'autorité régionale en cas de crise. Elle rembourse les
+      déposants jusqu'à un plafond par personne si une banque fait défaut. Les montants au-dessus du
+      plafond ne sont pas couverts. Le remboursement prend plusieurs semaines.
+
+  - doc_id: val-morin-2009
+    titre: La chute de la Banque du Val-Morin (2009)
+    texte: >-
+      En 2009, dans la vallée voisine, une rumeur sur la Banque du Val-Morin a provoqué des files devant ses
+      guichets pendant trois jours. La banque était solvable, mais elle n'avait pas assez d'argent en caisse
+      pour rembourser tout le monde. Elle a fermé. Les derniers clients à se présenter ont attendu deux ans
+      pour récupérer une partie de leurs dépôts.
+
+  - doc_id: rumeur-1998
+    titre: La rumeur de 1998
+    texte: >-
+      En 1998, un tract anonyme affirmait que la Caisse allait faire faillite. Quelques clients ont retiré
+      leur argent, puis la rumeur s'est éteinte en une semaine. La Caisse n'a jamais été en difficulté et
+      les clients partis sont revenus.
+
+  - doc_id: crise-2008
+    titre: La Caisse pendant la crise de 2008
+    texte: >-
+      En 2008, alors que de grandes banques étrangères vacillaient, la direction de la Caisse avait publié
+      ses comptes et ouvert ses agences plus tard le soir pour répondre aux questions. Les retraits étaient
+      restés limités.
+
+  - doc_id: direction-actuelle
+    titre: La direction de la Caisse
+    texte: >-
+      La direction actuelle est en place depuis six ans. Elle communique peu, ce qui lui est parfois
+      reproché. Lors de la dernière assemblée des sociétaires, plusieurs déposants ont demandé plus de
+      transparence sur les prêts accordés à la Zone artisanale.
+
+  - doc_id: agences-horaires
+    titre: Les agences et leurs horaires
+    texte: >-
+      L'Agence du Bourg est la plus ancienne et la plus fréquentée. L'Agence du Marché accueille surtout les
+      commerçants. L'Agence de la Zone artisanale sert les ateliers. Toutes sont fermées le dimanche. Un
+      guichet sert environ trois clients par quart d'heure.
+
+  - doc_id: presse-locale
+    titre: La Maison de la presse et le journal local
+    texte: >-
+      L'Écho de Brévanne paraît chaque matin et se vend à la Maison de la presse. Ses informations sur
+      l'économie locale sont souvent reprises en ligne. On lui a déjà reproché d'avoir publié des rumeurs
+      sans les vérifier.
+
+  - doc_id: reseaux-locaux
+    titre: Les groupes de discussion en ligne
+    texte: >-
+      Une partie des habitants, surtout parmi les plus jeunes et les entrepreneurs, échangent dans des
+      groupes de discussion en ligne. Les nouvelles y circulent en quelques minutes, vraies ou fausses.
+
+  - doc_id: cafe-bourg
+    titre: Le café du Bourg
+    texte: >-
+      Le café du Bourg est le lieu où l'on apprend les nouvelles. Les employés de la Caisse y déjeunent
+      souvent. On dit que ce qui s'y raconte le midi est connu de tout le village le soir.
+
+  - doc_id: boulangerie
+    titre: La boulangerie du Bourg
+    texte: >-
+      La boulangerie du Bourg est tenue par la même famille depuis trois générations. Le matin, c'est l'un
+      des lieux les plus fréquentés du village, et les conversations y vont bon train.
+
+  - doc_id: zone-artisanale
+    titre: La Zone artisanale
+    texte: >-
+      La Zone artisanale regroupe une dizaine d'ateliers qui emploient près de cent personnes de la vallée.
+      Plusieurs ont souffert de la hausse du prix des matériaux cette année. Leurs commandes restent
+      néanmoins nombreuses.
+
+  - doc_id: marche-hebdo
+    titre: Le marché de Brévanne
+    texte: >-
+      Le marché se tient sur la place tous les jours de la semaine. Les commerçants y règlent leurs
+      fournisseurs en liquide et passent ensuite déposer leur recette à l'Agence du Marché.
+
+  - doc_id: economie-vallee
+    titre: L'économie de la vallée
+    texte: >-
+      La vallée vit de l'agriculture, de l'artisanat et du commerce. Le chômage y est faible. La plupart
+      des habitants n'ont qu'une banque, la Caisse, où sont déposés leur salaire et leur épargne.
+
+  - doc_id: conseil-epargne
+    titre: Conseil aux épargnants (brochure de la Caisse)
+    texte: >-
+      Retirer son épargne dans la précipitation fait perdre les intérêts et expose au vol. En cas de doute,
+      la Caisse invite ses clients à poser leurs questions au guichet ou à demander un rendez-vous.
+
+  - doc_id: banques-paniques
+    titre: Ce que disent les économistes des paniques bancaires
+    texte: >-
+      Une panique bancaire peut faire tomber une banque saine : si chacun croit que les autres vont
+      retirer, il a intérêt à retirer le premier. À l'inverse, une garantie crédible ou une information
+      claire peut arrêter une panique en quelques heures.
+
+  - doc_id: ecole-parents
+    titre: L'école de Brévanne
+    texte: >-
+      L'école accueille les enfants de toute la vallée. À la sortie, les parents discutent des nouvelles
+      du village. L'association des parents d'élèves a son compte à l'Agence du Bourg.
+
+  - doc_id: precedent-plafond
+    titre: Le plafonnement des retraits à Val-Morin
+    texte: >-
+      Lors de la crise de 2009, la Banque du Val-Morin avait limité les retraits au deuxième jour. Beaucoup
+      de clients y ont vu la preuve que la banque allait tomber, et les files se sont allongées.

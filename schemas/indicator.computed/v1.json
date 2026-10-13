@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/indicator.computed/v1.json",
+  "title": "Charge utile de indicator.computed (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "nom": {
+      "type": "string",
+      "minLength": 1
+    },
+    "valeur": {
+      "type": "number"
+    },
+    "fenetre_min": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "composantes": {
+      "type": "object"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "retard_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "nom",
+    "valeur",
+    "fenetre_min",
+    "composantes",
+    "sources",
+    "retard_ms"
+  ],
+  "description": "Indicateur calculé pendant le run (B2). 'sources' permet de remonter aux événements bruts (F6) ; retard_ms = t_proc - t_emit de l'événement source le plus récent (C7)."
+}

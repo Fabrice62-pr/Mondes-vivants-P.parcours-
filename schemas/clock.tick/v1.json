@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/clock.tick/v1.json",
+  "title": "Charge utile de clock.tick (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "jour": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "jour_semaine": {
+      "enum": [
+        "lundi",
+        "mardi",
+        "mercredi",
+        "jeudi",
+        "vendredi",
+        "samedi",
+        "dimanche"
+      ]
+    },
+    "heure": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 23
+    },
+    "minute": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 59
+    },
+    "agences_ouvertes": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "jour",
+    "jour_semaine",
+    "heure",
+    "minute",
+    "agences_ouvertes"
+  ],
+  "description": "Frontière d'un pas de temps simulé. Sert de barrière en mode synchrone et de repère à Godot.",
+  "examples": [
+    {
+      "jour": 3,
+      "jour_semaine": "vendredi",
+      "heure": 7,
+      "minute": 30,
+      "agences_ouvertes": false
+    }
+  ]
+}

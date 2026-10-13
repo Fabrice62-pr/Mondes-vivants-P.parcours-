@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/queue.changed/v1.json",
+  "title": "Charge utile de queue.changed (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agence_id": {
+      "enum": [
+        "bourg",
+        "ag_marche",
+        "zone"
+      ]
+    },
+    "longueur": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ouverte": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "agence_id",
+    "longueur",
+    "ouverte"
+  ]
+}

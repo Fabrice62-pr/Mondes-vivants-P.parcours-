@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/incident.raised/v1.json",
+  "title": "Charge utile de incident.raised (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "nature": {
+      "enum": [
+        "timeout",
+        "json_invalide",
+        "hors_role",
+        "quota",
+        "erreur_api",
+        "pas_de_reponse",
+        "modele_non_attribue",
+        "budget_epuise"
+      ]
+    },
+    "agent_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repli": {
+      "enum": [
+        "regles",
+        "nouvel_essai",
+        "ignore"
+      ]
+    }
+  },
+  "required": [
+    "nature",
+    "agent_id",
+    "call_id",
+    "detail",
+    "repli"
+  ],
+  "description": "Incident LLM tracé et dénombré (A4). Le repli n'est JAMAIS un autre modèle."
+}

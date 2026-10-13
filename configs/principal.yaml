@@ -1,0 +1,176 @@
+# Configuration principale d'un run. Tout ce qui varie entre deux runs est ici (C2) :
+# aucun paramètre de run ne doit être écrit en dur dans le code.
+
+nom: principal
+graine: 1                       # fixe l'attribution des modèles, les profils et les tirages aléatoires
+mode: synchrone                 # synchrone | asynchrone (C4)
+asynchrone:
+  rythme_s: 0.5                 # secondes réelles par pas de 15 min ; une réponse LLM de 1,5 s arrive 3 pas plus tard
+
+horloge:
+  pas_min: 15                   # 1 pas = 15 minutes simulées
+  debut: { jour: mercredi, heure: "08:00" }   # J1 = mercredi
+  duree_jours: 7                # du mercredi J1 au mardi J7 inclus
+  article: { jour: 3, heure: "07:30" }        # vendredi matin : la presse publie l'article
+  agences:
+    jours: [lundi, mardi, mercredi, jeudi, vendredi, samedi]   # fermées le dimanche
+    ouverture: "09:00"
+    fermeture: "17:00"
+
+population:
+  deposants: 140                # hors personnages principaux
+  part_regles: 0.25             # A6 : les 25 % les moins exposés à l'information (sociabilité la plus faible)
+  part_connectes: 0.20          # déposants très connectés : reçoivent l'article dès sa parution
+  # Répartition des agents « petit modèle » entre fournisseurs. C'est un choix de charge, pas un
+  # choix cognitif : le tirage est équilibré à l'intérieur de chaque profil.
+  # Mistral absorbe le volume (188 req/min) ; Groq est limité à 1 000 req/jour par modèle.
+  repartition_petits: { ministral-8b: 0.80, gpt-oss-20b: 0.20 }
+
+# Profils des déposants ordinaires (repris de la maquette Godot). part = proportion dans la population ;
+# les intervalles [a, b] sont tirés uniformément. Le profil « prudent » complète à 100 %.
+# sociabilite (0..1) règle le nombre de sorties et sert à choisir les agents à règles (les moins exposés).
+profils:
+  connecte:   { depot: [5000, 25000],  seuil: [0.42, 0.55], loyaute: 0.25, confiance: 0.50, sociabilite: [0.6, 1.0] }
+  fidele:     { part: 0.25, depot: [3000, 30000],  seuil: [0.70, 0.85], loyaute: 0.80, confiance: 0.85, sociabilite: [0.2, 0.7] }
+  commercant: { part: 0.20, depot: [15000, 50000], seuil: [0.50, 0.62], loyaute: 0.50, confiance: 0.65, sociabilite: [0.5, 0.9] }
+  prudent:    { depot: [2000, 20000],  seuil: [0.52, 0.68], loyaute: 0.45, confiance: 0.60, sociabilite: [0.1, 0.6] }
+
+# Personnages principaux : grand modèle, attribué nominativement et fixé pour tout le run.
+# A5 : la justification porte sur le rôle et l'expérience, jamais sur une catégorie sociale.
+# persona : qui ils sont, repris tel quel dans leur prompt (A3).
+personnages_principaux:
+  - id: boulangere
+    nom: La boulangère
+    role: deposant
+    modele: gpt-oss-120b
+    depot: 48000
+    traits: { seuil: 0.50, loyaute: 0.55, confiance: 0.65, sociabilite: 0.8, connecte: false }
+    quartier: q_bourg
+    lieu_travail: boulangerie
+    justification: gère seule la trésorerie de son commerce, entièrement déposée à la Caisse
+    persona: >-
+      Tu tiens la boulangerie du bourg. Toute la trésorerie de ton commerce est déposée à la Caisse :
+      sans elle, tu ne peux plus payer ta farine ni ton apprentie. Au comptoir, tu entends toutes les
+      conversations du village.
+  - id: retraite
+    nom: Le retraité
+    role: deposant
+    modele: gpt-oss-120b
+    depot: 60000
+    traits: { seuil: 0.92, loyaute: 0.95, confiance: 0.90, sociabilite: 0.5, connecte: false }
+    quartier: q_bourg
+    justification: quarante ans d'expérience comme client de la Caisse
+    persona: >-
+      Tu es retraité et client de la Caisse depuis quarante ans. Tu as connu ses fondateurs et tu as
+      déjà vu passer des rumeurs qui ne se sont jamais vérifiées. Ton épargne est toute ta retraite.
+  - id: entrepreneur
+    nom: L'entrepreneur
+    role: deposant
+    modele: gpt-oss-120b
+    depot: 26000
+    traits: { seuil: 0.45, loyaute: 0.20, confiance: 0.45, sociabilite: 0.7, connecte: true }
+    quartier: q_est
+    justification: gère la trésorerie d'une entreprise et suit l'actualité économique
+    persona: >-
+      Tu diriges un atelier de la zone artisanale. Tu suis l'actualité économique en ligne, et la
+      trésorerie de ton entreprise doit payer tes six salariés à la fin du mois.
+  - id: employe
+    nom: L'employé d'agence
+    role: employe
+    modele: gpt-oss-120b
+    justification: rôle institutionnel ; informe les clients au guichet et voit les retraits s'accumuler
+    persona: >-
+      Tu travailles au guichet depuis douze ans. Tu connais les clients par leur nom et tu tiens à leur
+      confiance, mais tu dois aussi respecter les consignes de la direction.
+  - id: direction
+    nom: La direction
+    role: direction
+    modele: gemma-31b             # peu d'appels : tolère la latence de Google
+    justification: rôle institutionnel ; décide des communiqués et des mesures (plafond, fermeture)
+    persona: >-
+      Tu diriges la Caisse. Tu décides des communiqués. Tu sais qu'une panique peut faire tomber une
+      banque solide, et qu'un communiqué maladroit peut l'aggraver.
+
+caisse:
+  ratio_reserves: 0.15          # part des dépôts gardée en caisse
+  ratio_fonds_propres: 0.08
+  pertes_reelles: 0.0           # > 0 : l'emprunteur fait réellement défaut (panique justifiée)
+
+rumeur:
+  force: 0.65                   # zone de bascule : l'issue varie selon la graine (étalonnage semaine 2)
+
+leviers:                        # état initial ; modifiables en direct depuis Godot (D3)
+  garantie: false
+  plafond_garantie: 20000
+  plafond_retrait: 1.0          # part du dépôt retirable par passage au guichet
+  consigne_employe: silence     # silence | transparence (consigne de la direction ; l'agent peut s'en écarter)
+  direction_autonome: true      # la direction agit seule ; l'utilisateur peut forcer une action
+
+llm:
+  actif: true                   # false (ou --sans-llm) : tous les agents décident par règles
+  budget_appels: 4000           # au-delà, les agents LLM décident avec leur règle (incident tracé)
+  delai_max_s: 30               # par défaut ; chaque modèle peut avoir son timeout_s (models.yaml)
+  essais: 2                     # nouvel essai sur le MÊME modèle, jamais sur un autre
+  max_simultanes: 6             # appels en parallèle pendant un pas
+  attente_quota_max_s: 120      # le pas attend que le quota du modèle se libère (8 000 tokens/min chez Groq)
+  temperature: 0.7
+  # Quand un déposant LLM réfléchit-il ? Seulement s'il est éveillé, au plus une fois par
+  # intervalle, et si quelque chose a changé : une nouvelle information dans son carnet, ou un
+  # ressenti (peur, estimation des autres) qui a bougé d'au moins seuil_reflexion depuis sa
+  # dernière réflexion. Entre deux réflexions, il garde sa dernière décision.
+  intervalle_decision_min: 60
+  seuil_reflexion: 0.10
+
+# Mémoire des agents LLM et RAG (semaine 6). Plongements calculés en local (GPU si disponible).
+rag:
+  actif: true
+  modele_plongement: intfloat/multilingual-e5-small
+  k_souvenirs: 4                # souvenirs rappelés à chaque décision (en plus du carnet récent)
+  k_documents: 2                # documents du corpus de la vallée (rag/corpus.yaml)
+  demi_vie_h: 24                # fraîcheur d'un souvenir : son poids est divisé par deux en 24 h simulées
+  max_reflexions: 1             # souvenirs de ses propres décisions rappelés à la fois (évite de ressasser)
+
+guichet:
+  service_min: 5                # minutes simulées par client au guichet (3 clients par pas et par agence)
+  arret_apres_defaut_h: 4       # le run continue 4 h simulées après un défaut, puis s'arrête
+
+# Vie quotidienne des déposants
+routine:
+  lever: "07:00"
+  coucher: "21:00"              # à cette heure, tout le monde rentre ; aucune activité la nuit
+  sorties_min_par_jour: 0.5     # sorties par jour = min + sociabilite × (max - min)
+  sorties_max_par_jour: 3.0
+  duree_sortie_min: [30, 120]   # durée d'une visite dans un lieu de rencontre (minutes)
+  vitesse_m_par_min: 70
+  pause_dejeuner_employe: "12:00"
+
+# Paramètres des agents à règles (et du repli des agents LLM). Chaque règle a un identifiant,
+# affiché dans l'inspection d'agent (D2) et porté par decision.made.regle_id.
+regles:
+  visibilite_file_m: 50         # R-file : une file est visible depuis un lieu situé à moins de 50 m
+  file_saturee: 8               # une file de 8 personnes paraît « pleine » (perception = 1)
+  apprentissage_file: [0.30, 0.03]   # vitesse d'ajustement de estime_autres : montée, descente
+  ambiance_poids: 0.15          # R-ambiance : humeur des personnes présentes dans le même lieu
+  conversation_attraction: 0.35 # R-conversation : force d'alignement sur la peur de l'interlocuteur
+  conversation_estime: 0.12     # « voir quelqu'un d'inquiet, c'est apprendre que d'autres pourraient retirer »
+  conversation_intervalle_min: 60
+  oubli_peur_par_pas: 0.002     # R-oubli : l'inquiétude retombe si rien ne l'entretient
+  oubli_estime_par_pas: 0.003
+  question_guichet: 0.30        # probabilité qu'un client servi pose une question à l'employé
+  employe_elude_si_silence: 0.80
+  seuil_fuite_employe: 0.08     # part retirée au-delà de laquelle l'employé peut parler au café
+  direction_controles: ["08:00", "14:00"]   # R-direction : heures où la direction examine la situation
+  direction_seuil_file: 10      # file totale qui déclenche un communiqué
+  direction_seuil_retraits: 0.10
+  direction_delai_min_h: 24     # pas deux communiqués en moins de 24 h
+
+# Commandes programmées : elles rendent un scénario reproductible (E2). Même format que les commandes
+# envoyées depuis Godot. Exemple :
+#   - { jour: 3, heure: "12:00", commande: garantie, parametres: { active: true, plafond: 100000 } }
+scenario: []
+
+# Message de la presse publié à l'heure de l'article
+article:
+  titre: "Un gros emprunteur de la Caisse en difficulté ?"
+  texte: "Selon nos informations, un important emprunteur de la Caisse Coopérative de Brévanne connaîtrait de sérieuses difficultés financières."
+

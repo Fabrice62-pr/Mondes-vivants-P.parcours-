@@ -1,0 +1,69 @@
+# Kafka (mode KRaft, un seul nœud) + Kafka UI + création des topics.
+#   docker compose up -d
+#   Kafka UI : http://localhost:8080
+# Depuis la machine hôte, Kafka répond sur localhost:9092.
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: guichet-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNE://:19092,CONTROLLER://:9093,HOTE://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNE://kafka:19092,HOTE://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNE:PLAINTEXT,HOTE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNE
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # Crée les topics puis s'arrête. Voir docs/evenements.md pour leur rôle.
+  kafka-init:
+    image: apache/kafka:3.9.0
+    container_name: guichet-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        T=/opt/kafka/bin/kafka-topics.sh
+        B=kafka:19092
+        # flux : 3 partitions, conservation 7 jours
+        for t in guichet.events guichet.commands guichet.llm.requests guichet.llm.responses \
+                 guichet.indicators guichet.incidents; do
+          $$T --bootstrap-server $$B --create --if-not-exists --topic $$t \
+              --partitions 3 --replication-factor 1 --config retention.ms=604800000
+        done
+        # rebuts (événements non conformes) : conservés 30 jours
+        $$T --bootstrap-server $$B --create --if-not-exists --topic guichet.dlq \
+            --partitions 1 --replication-factor 1 --config retention.ms=2592000000
+        # état courant : topic compacté (seule la dernière valeur par clé est gardée)
+        $$T --bootstrap-server $$B --create --if-not-exists --topic guichet.state \
+            --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        $$T --bootstrap-server $$B --list
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: guichet-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: guichet
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092

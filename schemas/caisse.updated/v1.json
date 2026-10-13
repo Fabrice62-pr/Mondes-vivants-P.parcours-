@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/caisse.updated/v1.json",
+  "title": "Charge utile de caisse.updated (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "depots": {
+      "type": "number",
+      "minimum": 0
+    },
+    "reserves": {
+      "type": "number",
+      "minimum": 0
+    },
+    "valeur_prets": {
+      "type": "number",
+      "minimum": 0
+    },
+    "fonds_propres": {
+      "type": "number"
+    },
+    "marge_solvabilite": {
+      "type": "number"
+    },
+    "defaut": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "depots",
+    "reserves",
+    "valeur_prets",
+    "fonds_propres",
+    "marge_solvabilite",
+    "defaut"
+  ]
+}

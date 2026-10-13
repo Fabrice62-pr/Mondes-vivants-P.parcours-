@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/caisse.defaulted/v1.json",
+  "title": "Charge utile de caisse.defaulted (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "solvable": {
+      "type": "boolean"
+    },
+    "reserves_restantes": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "solvable",
+    "reserves_restantes"
+  ],
+  "description": "solvable = true : panique autoréalisatrice ; false : panique justifiée."
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/belief.updated/v1.json",
+  "title": "Charge utile de belief.updated (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "peur": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "estime_autres": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "peur_avant": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "estime_autres_avant": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "cause": {
+      "enum": [
+        "article",
+        "conversation",
+        "file_observee",
+        "communique",
+        "guichet",
+        "ambiance",
+        "oubli",
+        "fermeture_agence",
+        "injection",
+        "reflexion"
+      ]
+    }
+  },
+  "required": [
+    "agent_id",
+    "peur",
+    "estime_autres",
+    "peur_avant",
+    "estime_autres_avant",
+    "cause"
+  ]
+}

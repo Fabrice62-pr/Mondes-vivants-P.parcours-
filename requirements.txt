@@ -1,0 +1,15 @@
+# Dépendances Python du projet GUICHET (versions figées pour la reproductibilité).
+#   .venv\Scripts\python -m pip install -r requirements.txt
+PyYAML==6.0.3
+jsonschema==4.26.0
+confluent-kafka==2.16.0
+websockets==17.2
+pytest==9.1.1
+# Mémoire des agents et RAG (semaine 6) : Chroma et plongements calculés en local.
+# PyTorch avec CUDA s'installe depuis l'index de PyTorch, AVANT le reste :
+#   .venv\Scripts\python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+# (sans GPU NVIDIA : --index-url https://download.pytorch.org/whl/cpu, environ 250 Mo au lieu de 3 Go)
+chromadb==1.5.9
+sentence-transformers==6.1.0
+# Historique des runs (semaine 7) : Parquet et requêtes SQL
+duckdb==1.5.6

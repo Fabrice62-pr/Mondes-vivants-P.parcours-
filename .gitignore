@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Godot
+guichet/.godot/
+guichet/export_presets.cfg
+
+# Données produites par les runs (historique, index RAG)
+data/
+
+# Tests
+.pytest_cache/

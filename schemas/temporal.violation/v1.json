@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/temporal.violation/v1.json",
+  "title": "Charge utile de temporal.violation (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "element_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "t_sim_element": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "t_sim_contexte": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "raison": {
+      "enum": [
+        "futur",
+        "non_recu"
+      ]
+    }
+  },
+  "required": [
+    "agent_id",
+    "decision_event_id",
+    "element_id",
+    "t_sim_element",
+    "t_sim_contexte",
+    "raison"
+  ],
+  "description": "Une décision s'appuie sur une information postérieure à son contexte ou jamais reçue par l'agent (C6)."
+}

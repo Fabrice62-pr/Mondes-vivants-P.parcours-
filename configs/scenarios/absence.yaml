@@ -1,0 +1,14 @@
+# Scénario B3 « absence » : les inquiétudes restent dispersées, aucun contexte commun n'émerge.
+herite: ../principal.yaml
+nom: absence
+
+rumeur:
+  force: 0.20
+
+leviers:
+  garantie: true
+  plafond_garantie: 100000
+
+# La direction publie un communiqué factuel dès la parution de l'article (vendredi 8 h).
+scenario:
+  - { jour: 3, heure: "08:00", commande: publier_communique, parametres: { ton: factuel } }

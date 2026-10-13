@@ -1,0 +1,86 @@
+# Catalogue des fournisseurs et des modèles LLM (tous gratuits, contrainte G).
+# Les identifiants et les offres gratuites évoluent : vérifiez avec
+#   python tools/check_llm.py --list
+#
+# Groq et Mistral : API compatible OpenAI. Google : API native Gemini (generateContent), car son
+# interface compatible OpenAI renvoie HTTP 500 pour Gemma 4 (constaté le 13/10/2026).
+#
+# Quotas gratuits relevés le 13/10/2026 dans les en-têtes de réponse :
+#   Groq    : 1 000 requêtes/jour et 8 000 tokens/minute, PAR modèle
+#   Mistral : 188 requêtes/minute et 625 000 tokens/minute
+#   Google  : non communiqués ; latence de 28 à 38 s et erreurs 500/503 fréquentes ce jour-là
+
+providers:
+  groq:
+    base_url: https://api.groq.com/openai/v1
+    env_key: GROQ_API_KEY
+    api: openai
+  mistral:
+    base_url: https://api.mistral.ai/v1
+    env_key: MISTRAL_API_KEY
+    api: openai
+  google:
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    env_key: GEMINI_API_KEY
+    api: gemini_native
+
+# params_b : taille PUBLIÉE (paramètres totaux, en milliards). C'est elle qui fonde l'hypothèse A5
+# (taille du modèle = capacité cognitive). Pour un modèle « mixture of experts » (moe: true), on indique
+# aussi les paramètres actifs par token. Un modèle de taille non publiée n'est jamais attribué à un agent.
+#
+# Catalogue vérifié le 13/10/2026 (check_llm.py --list). Groq ne sert plus Llama, Mistral ne sert plus
+# Mistral Large, Google ne sert plus Gemma 3.
+models:
+  # --- catégorie « grand » : personnages principaux
+  gpt-oss-120b:
+    provider: groq
+    id: openai/gpt-oss-120b
+    params_b: 117
+    active_b: 5.1
+    moe: true
+    tier: grand
+    extra: { reasoning_effort: low }   # modèle à raisonnement : limiter les tokens de réflexion
+    max_tokens: 700                    # la réflexion consomme des tokens avant la réponse
+    json: true                         # response_format json_object
+    timeout_s: 30
+    limites: { rpm: 30, tpm: 8000, rpd: 1000 }
+  gemma-31b:
+    provider: google
+    id: gemma-4-31b-it
+    params_b: 31
+    tier: grand
+    system_in_user: true            # Gemma n'accepte pas d'instruction système : on la place dans le message
+    max_tokens: 1500                # à 500 : réponses vides ou tronquées (constaté le 13/10/2026)
+    json: false                     # pas de mode JSON imposé : la réponse est extraite et validée
+    timeout_s: 120                  # 30 à 60 s mesurées : réservé à la direction, qui délibère sans bloquer le run
+    limites: { rpm: 15 }
+
+  # --- catégorie « petit » : reste de la population LLM
+  gpt-oss-20b:
+    provider: groq
+    id: openai/gpt-oss-20b
+    params_b: 21
+    active_b: 3.6
+    moe: true
+    tier: petit
+    extra: { reasoning_effort: low }
+    max_tokens: 700
+    json: true
+    timeout_s: 30
+    limites: { rpm: 30, tpm: 8000, rpd: 1000 }
+  ministral-8b:
+    provider: mistral
+    id: ministral-8b-2512
+    params_b: 8
+    tier: petit
+    max_tokens: 300
+    json: true
+    timeout_s: 30
+    limites: { rpm: 180, tpm: 600000 }
+
+# Modèle auxiliaire : il n'est JAMAIS attribué à un agent (aucun agent ne change de modèle).
+# Il sert aux tâches d'analyse, par exemple classer les messages pour l'indicateur de contexte commun.
+auxiliary:
+  classifier:
+    provider: google
+    id: gemini-flash-lite-latest

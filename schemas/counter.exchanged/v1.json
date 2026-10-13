@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/counter.exchanged/v1.json",
+  "title": "Charge utile de counter.exchanged (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agence_id": {
+      "enum": [
+        "bourg",
+        "ag_marche",
+        "zone"
+      ]
+    },
+    "client_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reponse": {
+      "type": "string",
+      "minLength": 1
+    },
+    "elude": {
+      "type": "boolean"
+    },
+    "consigne": {
+      "enum": [
+        "silence",
+        "transparence"
+      ]
+    },
+    "call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "agence_id",
+    "client_id",
+    "question",
+    "reponse",
+    "elude",
+    "consigne",
+    "call_id"
+  ],
+  "description": "Échange au guichet entre l'employé d'agence et un client. 'elude' alimente la mémoire du client (A1)."
+}

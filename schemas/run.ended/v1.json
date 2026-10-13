@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/run.ended/v1.json",
+  "title": "Charge utile de run.ended (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "raison": {
+      "enum": [
+        "fin_horloge",
+        "defaut",
+        "arret_utilisateur",
+        "erreur"
+      ]
+    },
+    "resume": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "raison",
+    "resume"
+  ]
+}

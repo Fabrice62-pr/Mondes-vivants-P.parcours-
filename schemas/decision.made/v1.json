@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/decision.made/v1.json",
+  "title": "Charge utile de decision.made (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "enum": [
+        "llm",
+        "regles",
+        "repli_regles"
+      ]
+    },
+    "action": {
+      "enum": [
+        "retirer",
+        "attendre",
+        "rassurer",
+        "publier_communique",
+        "plafonner_retraits",
+        "fermer_agence",
+        "rouvrir_agence",
+        "repondre",
+        "eluder",
+        "rien"
+      ]
+    },
+    "justification": {
+      "type": "string",
+      "minLength": 1
+    },
+    "regle_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "t_sim_contexte": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "score": {
+            "type": "number"
+          },
+          "t_sim_doc": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "doc_id",
+          "score",
+          "t_sim_doc"
+        ]
+      }
+    },
+    "souvenirs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "agent_id",
+    "type",
+    "action",
+    "justification",
+    "regle_id",
+    "t_sim_contexte",
+    "documents",
+    "souvenirs",
+    "call_id"
+  ],
+  "description": "t_sim_contexte = instant simulé de la photographie du monde utilisée pour décider. L'enveloppe porte t_sim = instant où la décision s'applique. En mode asynchrone les deux diffèrent (C3, C6).",
+  "examples": [
+    {
+      "agent_id": "boulangere",
+      "type": "llm",
+      "action": "attendre",
+      "justification": "Le communiqué d'hier parle de réserves suffisantes et la file a diminué.",
+      "regle_id": null,
+      "t_sim_contexte": 4320,
+      "documents": [
+        {
+          "doc_id": "communique-002",
+          "score": 0.82,
+          "t_sim_doc": 4200
+        }
+      ],
+      "souvenirs": [
+        "m-boulangere-0031"
+      ],
+      "call_id": "c-000412"
+    },
+    {
+      "agent_id": "dep_117",
+      "type": "regles",
+      "action": "retirer",
+      "justification": "pression 0.71 > seuil 0.62",
+      "regle_id": "R-seuil",
+      "t_sim_contexte": 4335,
+      "documents": [],
+      "souvenirs": [],
+      "call_id": null
+    }
+  ]
+}

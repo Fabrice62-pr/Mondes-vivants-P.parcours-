@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/llm.called/v1.json",
+  "title": "Charge utile de llm.called (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "call_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "usage": {
+      "enum": [
+        "decision",
+        "conversation",
+        "reflexion",
+        "guichet",
+        "communique",
+        "classification"
+      ]
+    },
+    "fournisseur": {
+      "enum": [
+        "groq",
+        "mistral",
+        "google"
+      ]
+    },
+    "modele": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier": {
+      "enum": [
+        "grand",
+        "petit",
+        "auxiliaire"
+      ]
+    },
+    "tokens_entree": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_sortie": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "latence_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "statut": {
+      "enum": [
+        "ok",
+        "timeout",
+        "json_invalide",
+        "hors_role",
+        "quota",
+        "erreur"
+      ]
+    },
+    "essai": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "call_id",
+    "agent_id",
+    "usage",
+    "fournisseur",
+    "modele",
+    "tier",
+    "tokens_entree",
+    "tokens_sortie",
+    "latence_ms",
+    "statut",
+    "essai"
+  ],
+  "description": "Coût et issue de chaque appel (E4). Le modèle doit être celui attribué dans run.started."
+}

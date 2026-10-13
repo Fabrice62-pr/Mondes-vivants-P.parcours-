@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/envelope/v1.json",
+  "title": "Enveloppe commune à tous les événements GUICHET",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "type",
+    "version",
+    "run_id",
+    "seq",
+    "t_sim",
+    "t_emit",
+    "producer",
+    "causes",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "type": {
+      "enum": [
+        "agent.moved",
+        "article.published",
+        "belief.updated",
+        "caisse.defaulted",
+        "caisse.updated",
+        "clock.tick",
+        "command.issued",
+        "communique.published",
+        "conversation.held",
+        "counter.exchanged",
+        "decision.made",
+        "incident.raised",
+        "indicator.computed",
+        "llm.called",
+        "memory.written",
+        "queue.changed",
+        "run.ended",
+        "run.started",
+        "state.snapshot",
+        "temporal.violation",
+        "withdrawal.served"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rang croissant par producteur dans un run"
+    },
+    "t_sim": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Minutes simulées depuis le début du run"
+    },
+    "t_emit": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Heure réelle d'émission"
+    },
+    "t_proc": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Heure réelle de traitement, posée par le consommateur (C3)"
+    },
+    "producer": {
+      "enum": [
+        "moteur",
+        "passerelle_llm",
+        "indicateurs",
+        "bridge",
+        "rejeu"
+      ]
+    },
+    "causes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "event_id des événements qui ont provoqué celui-ci (traçabilité F6, B4)"
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

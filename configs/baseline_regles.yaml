@@ -1,0 +1,11 @@
+# Référence sans LLM (E1) : le même monde, les mêmes scénarios, uniquement des agents à règles.
+# Les clés absentes sont reprises de principal.yaml.
+
+herite: principal.yaml
+nom: baseline_regles
+
+population:
+  part_regles: 1.0
+
+# Les personnages principaux gardent leur profil (dépôt, rôle) mais décident avec des règles.
+personnages_principaux_en_regles: true

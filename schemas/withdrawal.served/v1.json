@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/withdrawal.served/v1.json",
+  "title": "Charge utile de withdrawal.served (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agence_id": {
+      "enum": [
+        "bourg",
+        "ag_marche",
+        "zone"
+      ]
+    },
+    "demande": {
+      "type": "number",
+      "minimum": 0
+    },
+    "paye": {
+      "type": "number",
+      "minimum": 0
+    },
+    "perdu": {
+      "type": "number",
+      "minimum": 0
+    },
+    "garanti": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "agent_id",
+    "agence_id",
+    "demande",
+    "paye",
+    "perdu",
+    "garanti"
+  ]
+}

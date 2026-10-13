@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/conversation.held/v1.json",
+  "title": "Charge utile de conversation.held (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "lieu": {
+      "enum": [
+        "domicile",
+        "cafe",
+        "marche",
+        "ecole",
+        "presse",
+        "boulangerie",
+        "bourg",
+        "ag_marche",
+        "zone"
+      ]
+    },
+    "locuteur_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "auditeur_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phrase": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reponse": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "llm",
+        "regles"
+      ]
+    },
+    "call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "lieu",
+    "locuteur_id",
+    "auditeur_id",
+    "phrase",
+    "reponse",
+    "mode",
+    "call_id"
+  ],
+  "examples": [
+    {
+      "lieu": "cafe",
+      "locuteur_id": "entrepreneur",
+      "auditeur_id": "dep_042",
+      "phrase": "Ça s'emballe en ligne. Je préfère sécuriser avant les autres.",
+      "reponse": "Tu crois vraiment que tout le monde va y aller ?",
+      "mode": "llm",
+      "call_id": "c-000183"
+    }
+  ]
+}

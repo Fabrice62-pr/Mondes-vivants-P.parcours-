@@ -1,0 +1,4 @@
+.godot/
+*.import
+export_presets.cfg
+__pycache__/

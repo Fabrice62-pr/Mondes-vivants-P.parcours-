@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "guichet/communique.published/v1.json",
+  "title": "Charge utile de communique.published (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "auteur": {
+      "enum": [
+        "direction",
+        "utilisateur"
+      ]
+    },
+    "ton": {
+      "enum": [
+        "rassurant",
+        "factuel",
+        "vague"
+      ]
+    },
+    "texte": {
+      "type": "string",
+      "minLength": 1
+    },
+    "credibilite": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "doc_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "auteur",
+    "ton",
+    "texte",
+    "credibilite",
+    "doc_id"
+  ],
+  "description": "auteur = utilisateur quand l'action a été forcée depuis Godot (injection D3). Le communiqué est indexé dans la base de connaissances sous doc_id."
+}
