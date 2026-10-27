@@ -1,9 +1,16 @@
 """Simulation GUICHET (C4).
 
-Mode synchrone : tous les agents agissent au même pas de temps ; le pas attend les réponses des LLM.
-Mode asynchrone : l'horloge avance au rythme réel choisi (engine/run.py) ; un agent LLM qui réfléchit
-n'arrête pas la vallée, et sa décision s'applique quand la réponse arrive, avec t_sim_contexte = l'instant
-où il a commencé à réfléchir (C3). Un modèle rapide agit donc plus tôt qu'un modèle lent (H2).
+Traitement hybride : un seul mécanisme pour tous les appels LLM (déposants, employé, direction). Les
+requêtes d'un pas partent en parallèle, puis le pas attend leurs réponses **au plus `echeance_s` secondes
+réelles** :
+  - une réponse arrivée avant l'échéance s'applique dans ce pas (decision.made.voie = dans_le_pas) ;
+  - une réponse en retard s'applique au pas où elle arrive, avec t_sim_contexte = l'instant où l'agent a
+    commencé à réfléchir (voie = en_retard, C3). Un modèle rapide agit donc plus tôt qu'un modèle lent (H2).
+Les deux voies coexistent dans un même run ; c'est la latence réelle qui décide. Les deux autres modes sont
+des cas particuliers du même mécanisme :
+  - synchrone  : échéance infinie, le pas attend toutes les réponses (barrière) ;
+  - asynchrone : échéance nulle, le pas n'attend jamais ; chaque réponse s'applique à son arrivée.
+En hybride et en asynchrone, l'horloge avance au rythme réel choisi (engine/run.py).
 
 Ordre d'un pas (15 minutes simulées) :
   commandes -> article -> tic d'horloge -> arrivées -> routine, employé, conversations
@@ -12,9 +19,9 @@ Ordre d'un pas (15 minutes simulées) :
 Chaque règle porte un identifiant (R-seuil, R-file, ...) repris dans decision.made.regle_id (D2).
 
 Agents LLM (llm.actif) : un déposant LLM réfléchit quand quelque chose a changé pour lui (voir
-_doit_reflechir) ; les requêtes d'un pas partent en un lot et le pas attend leurs réponses (barrière du
-mode synchrone). L'employé d'agence répond au guichet du Bourg, la direction décide des communiqués. En
-cas d'échec, l'agent décide avec sa règle (decision.made.type = repli_regles) et un incident est publié.
+_doit_reflechir) ; les requêtes d'un pas partent en un lot. L'employé d'agence répond au guichet du Bourg,
+la direction décide des communiqués. En cas d'échec, l'agent décide avec sa règle
+(decision.made.type = repli_regles) et un incident est publié.
 
 Mémoire (rag.actif) : chaque chose qu'un agent LLM apprend devient un souvenir (memory.written). Avant de
 décider, il se rappelle ses souvenirs les plus utiles, datés d'avant la décision, et les documents du
@@ -23,6 +30,9 @@ reçu produirait un temporal.violation (C6).
 """
 import math
 import random
+import time
+from concurrent.futures import Future, wait
+from dataclasses import dataclass
 from datetime import datetime
 
 from . import textes
@@ -32,7 +42,7 @@ from .caisse import Caisse
 from llm import prompts
 from llm.passerelle import Passerelle, Requete
 
-from .config import ROOT, charger_modeles, charger_monde, empreinte
+from .config import ROOT, charger_modeles, charger_monde, echeance, empreinte
 from .evenements import Bus, Fabrique, PuitsMemoire, Validateur
 from .horloge import Horloge, minutes
 from .indicateurs import icc
@@ -54,13 +64,25 @@ def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
 
+@dataclass
+class Echange:
+    """Question d'un client au guichet du Bourg, dont l'employé LLM n'a pas encore répondu."""
+    future: Future
+    t0: int
+    client: Deposant
+    agence: str
+    eid: str                    # withdrawal.served qui précède la question
+    question: str
+    consigne: str
+    rappel: tuple | None
+
+
 class Simulation:
     def __init__(self, cfg: dict, graine: int | None = None, puits: list | None = None,
                  run_id: str | None = None, valider: bool = True, passerelle: Passerelle | None = None,
                  memoire=None):
-        if cfg["mode"] not in ("synchrone", "asynchrone"):
-            raise ValueError(f"mode inconnu : {cfg['mode']}")
-        self.asynchrone = cfg["mode"] == "asynchrone"
+        self.echeance = echeance(cfg)
+        self._limite_pas = 0.0                       # instant réel (time.monotonic) où l'attente du pas s'arrête
         self.cfg = cfg
         self.graine = cfg["graine"] if graine is None else graine
         self.rng = random.Random(f"sim-{self.graine}")
@@ -89,10 +111,10 @@ class Simulation:
         self.memoire = None
         if self.llm is not None and cfg.get("rag", {}).get("actif", False):
             if memoire is None:
-                from rag.memoire import Memoire          # import tardif : chromadb et le modèle sont lourds
+                from rag.memoire import Memoire          # import tardif : le modèle de plongement est lourd
                 from rag.plongement import Plongement
                 memoire = Memoire(Plongement(cfg["rag"].get("modele_plongement", "intfloat/multilingual-e5-small")),
-                                  self.run_id, ROOT / "data" / "rag" / "chroma", cfg["rag"])
+                                  self.run_id, cfg=cfg["rag"])   # PostgreSQL : POSTGRES_URL (.env)
             self.memoire = memoire
         self._docs_publies: dict[str, int] = {}      # doc_id (article, communiqué) -> t_sim de publication
         self._doc_article: str | None = None
@@ -102,6 +124,7 @@ class Simulation:
         self.replis = 0
         self.incidents = 0
         self.decisions_llm = 0
+        self.voies = {"dans_le_pas": 0, "en_retard": 0}   # décisions LLM appliquées dans le pas ou en retard
         c = cfg["caisse"]
         self.caisse = Caisse(sum(a.depot for a in self.deposants), c["ratio_reserves"],
                              c["ratio_fonds_propres"], c["pertes_reelles"])
@@ -131,7 +154,8 @@ class Simulation:
         self._basculement: str | None = None
         self.reserves_depart = self.caisse.reserves
         self._dernier_communique: str | None = None
-        self._deliberation = None                      # (future, t_contexte) : la direction réfléchit
+        self._deliberation = None                      # (future, t_contexte, rappel) : la direction réfléchit
+        self._echanges: list[Echange] = []             # questions au guichet en attente de la réponse de l'employé
         self._demarrer()
 
     # ================================================================ outils
@@ -170,20 +194,22 @@ class Simulation:
         self._deplacer(a, "domicile", EN_ROUTE)
 
     def _decision(self, agent, action: str, regle: str | None, justification: str, causes=(),
-                  call_id: str | None = None, t_contexte: int | None = None, rappel=None) -> str:
-        """regle None = décision du LLM (call_id renseigné) ; sinon une règle, qui pour un agent LLM est
-        un repli."""
+                  call_id: str | None = None, t_contexte: int | None = None, rappel=None,
+                  voie: str | None = None) -> str:
+        """regle None = décision du LLM (call_id et voie renseignés) ; sinon une règle, qui pour un agent LLM
+        est un repli."""
         agent.intention, agent.regle, agent.justification = action, regle, justification
         if regle is None:
             type_ = "llm"
             self.decisions_llm += 1
+            self.voies[voie] += 1
         else:
             type_ = "regles" if agent.type == "regles" else "repli_regles"
         return self._emettre("decision.made", {
             "agent_id": agent.id, "type": type_, "action": action, "justification": justification,
             "regle_id": regle, "t_sim_contexte": self.t if t_contexte is None else t_contexte,
             "documents": self._documents_cites(rappel), "souvenirs": [s.memoire_id for s in rappel[0]] if rappel else [],
-            "call_id": call_id}, causes)
+            "call_id": call_id, "voie": voie if regle is None else None}, causes)
 
     # ---------------------------------------------------------------- LLM
 
@@ -201,12 +227,14 @@ class Simulation:
             if res.incident["repli"] != "ignore":    # incident déjà signalé (clé absente, budget) : compté seulement
                 self._emettre("incident.raised", res.incident)
 
-    def _appel_unique(self, rq: Requete):
-        res = self.llm.executer([rq])[0]
-        self._publier_appels(res)
-        if not res.ok:
-            self.replis += 1
-        return res
+    def _attendre(self, futures: list[Future]) -> bool:
+        """Attente bornée par l'échéance du pas. True : les réponses arrivées s'appliquent dans ce pas ;
+        False (asynchrone) : aucune ne s'applique dans le pas où elle est partie, même si elle est déjà là."""
+        if self.echeance == 0:
+            return False
+        reste = None if self.echeance is None else max(0.0, self._limite_pas - time.monotonic())
+        wait(futures, timeout=reste)
+        return True
 
     # ---------------------------------------------------------------- mémoire (A1, F1, C6)
 
@@ -291,7 +319,7 @@ class Simulation:
     def _demarrer(self) -> None:
         h = self.cfg["horloge"]
         self._emettre("run.started", {
-            "graine": self.graine, "mode": self.cfg["mode"], "config_nom": self.cfg["nom"],
+            "graine": self.graine, "mode": self.cfg["mode"], "echeance_s": self.echeance, "config_nom": self.cfg["nom"],
             "config_hash": empreinte(self.cfg), "population": len(self.deposants),
             "horloge": {"pas_min": h["pas_min"], "debut_jour": h["debut"]["jour"],
                         "duree_jours": h["duree_jours"], "t_sim_article": self.t_article},
@@ -299,13 +327,18 @@ class Simulation:
         self._emettre("caisse.updated", self.caisse.etat())
 
     def _terminer(self, raison: str) -> None:
-        if self._deliberation is not None and self._deliberation[0].done():   # coût d'une délibération arrivée trop tard
+        # Réponses arrivées après le dernier pas : leur coût est compté, elles ne s'appliquent plus.
+        if self._deliberation is not None and self._deliberation[0].done():
             self._publier_appels(self._deliberation[0].result())
             self._deliberation = None
-        for a in self.deposants:                     # mode asynchrone : réflexions arrivées après la fin
+        for a in self.deposants:
             if a.reflexion is not None and a.reflexion[0].done():
                 self._publier_appels(a.reflexion[0].result())
             a.reflexion = None
+        for e in self._echanges:
+            if e.future.done():
+                self._publier_appels(e.future.result())
+        self._echanges = []
         self._emettre("run.ended", {"raison": raison, "resume": self.resume()})
         self.fini = True
         if self.llm is not None:
@@ -337,7 +370,8 @@ class Simulation:
             "evenements": sum(self.bus.compteur.values()), "par_type": dict(sorted(self.bus.compteur.items())),
             "rejets_dlq": self.bus.rejets,
             "llm": None if self.llm is None else {**self.llm.bilan(), "decisions_llm": self.decisions_llm,
-                                                  "replis": self.replis, "incidents": self.incidents},
+                                                  "voies": dict(self.voies), "replis": self.replis,
+                                                  "incidents": self.incidents},
             "rag": None if self.memoire is None else {"souvenirs": self.bus.compteur["memory.written"],
                                                       "rappels": self.n_rappels, "violations_c6": self.violations},
         }
@@ -348,6 +382,7 @@ class Simulation:
         if self.fini:
             return
         t = self.t
+        self._limite_pas = time.monotonic() + (self.echeance or 0.0)
         # L'horloge d'abord : les consommateurs (Godot) datent les événements du pas avec ce tick.
         self._emettre("clock.tick", self.horloge.decrire(t))
         self.traiter_commandes_externes()
@@ -597,8 +632,8 @@ class Simulation:
     # ================================================================ décisions
 
     def _decider(self, ouvert: bool) -> None:
-        if self.asynchrone:
-            self._recevoir_reflexions(ouvert)
+        self._recevoir_echanges()                    # réponses en retard des pas précédents, dans l'ordre d'envoi
+        self._recevoir_reflexions(ouvert)
         reflexions = []
         for a in self.deposants:
             if a.retire or a.etat in (VERS_AGENCE, EN_FILE):
@@ -634,10 +669,10 @@ class Simulation:
 
     def _appliquer(self, a: Deposant, action: str, regle: str | None, just: str, ouvert: bool,
                    call_id: str | None = None, forcer: bool = False, rappel=None,
-                   t_contexte: int | None = None) -> str | None:
+                   t_contexte: int | None = None, voie: str | None = None) -> str | None:
         did = None
         if action != a.intention or forcer:
-            did = self._decision(a, action, regle, just, a.causes_ids, call_id, t_contexte, rappel)
+            did = self._decision(a, action, regle, just, a.causes_ids, call_id, t_contexte, rappel, voie)
         if action == "retirer":
             a.veut_retirer = True
             if ouvert:
@@ -647,7 +682,7 @@ class Simulation:
         return did
 
     def _doit_reflechir(self, a: Deposant) -> bool:
-        if a.reflexion is not None:                  # mode asynchrone : il réfléchit déjà
+        if a.reflexion is not None:                  # sa réponse précédente n'est pas encore arrivée
             return False
         if not self.horloge.eveille(self.t) or self.t - a.t_llm < self.L.get("intervalle_decision_min", 60):
             return False
@@ -657,17 +692,19 @@ class Simulation:
 
     def _decider_llm(self, agents: list[Deposant], ouvert: bool) -> None:
         requetes, rappels = self._requetes_reflexion(agents)
-        if self.asynchrone:                          # pas de barrière : la réponse sera appliquée à son arrivée
-            for a, rq, rappel in zip(agents, requetes, rappels):
-                a.reflexion = (self.llm.soumettre(rq), self.t, rappel)
-                a.t_llm, a.n_notes_vues = self.t, a.n_notes
-            return
-        for a, rappel, res in zip(agents, rappels, self.llm.executer(requetes)):
+        for a, rq, rappel in zip(agents, requetes, rappels):
+            a.reflexion = (self.llm.soumettre(rq), self.t, rappel)
             a.t_llm, a.n_notes_vues = self.t, a.n_notes
-            self._appliquer_reflexion(a, rappel, res, ouvert, self.t)
+        if not self._attendre([a.reflexion[0] for a in agents]):
+            return
+        for a in agents:                             # arrivées avant l'échéance : appliquées dans ce pas
+            if a.reflexion[0].done():
+                future, t0, rappel = a.reflexion
+                a.reflexion = None
+                self._appliquer_reflexion(a, rappel, future.result(), ouvert, t0, "dans_le_pas")
 
     def _recevoir_reflexions(self, ouvert: bool) -> None:
-        """Mode asynchrone : applique les réflexions dont la réponse est arrivée, dans l'ordre des agents."""
+        """Réflexions en retard dont la réponse est arrivée : appliquées dans l'ordre des agents."""
         for a in self.deposants:
             if a.reflexion is None or not a.reflexion[0].done():
                 continue
@@ -677,7 +714,7 @@ class Simulation:
             if a.retire or a.veut_retirer or a.etat in (VERS_AGENCE, EN_FILE):
                 self._publier_appels(res)            # la situation a changé entre-temps : coût compté, rien d'autre
                 continue
-            self._appliquer_reflexion(a, rappel, res, ouvert, t0)
+            self._appliquer_reflexion(a, rappel, res, ouvert, t0, "en_retard")
 
     def _requetes_reflexion(self, agents: list[Deposant]) -> tuple[list, list]:
         moment = self.horloge.libelle(self.t)
@@ -698,7 +735,7 @@ class Simulation:
                 prompts.valider_deposant))
         return requetes, rappels
 
-    def _appliquer_reflexion(self, a: Deposant, rappel, res, ouvert: bool, t0: int) -> None:
+    def _appliquer_reflexion(self, a: Deposant, rappel, res, ouvert: bool, t0: int, voie: str) -> None:
         self._publier_appels(res)
         if not res.ok:
             self.replis += 1
@@ -711,7 +748,7 @@ class Simulation:
         a.peur_llm, a.estime_llm = a.peur, a.estime_autres
         a.phrase_llm, a.call_phrase = d["phrase"], res.requete.call_id
         did = self._appliquer(a, d["action"], None, d["justification"], ouvert, res.requete.call_id,
-                              forcer=True, rappel=rappel, t_contexte=t0)
+                              forcer=True, rappel=rappel, t_contexte=t0, voie=voie)
         self._verifier_c6(a, rappel, did, t0)
         if self.memoire is not None:                 # sa propre réflexion devient un souvenir
             self._souvenir(a, f"j'ai décidé {DECIDE[d['action']]} : {d['justification']}", "reflexion", 0.3, [did])
@@ -769,16 +806,43 @@ class Simulation:
             return
         consigne = self.leviers["consigne_employe"]
         question = self.rng.choice(textes.QUESTIONS)
-        llm = None
-        rappel = None
-        if ag == self.employe.lieu and self.employe.type == "llm" and self.llm is not None:
-            rappel = self._rappeler([self.employe], [f"Un client demande : {question}"])[0]
-            llm = self._appel_unique(self._requete(
-                self.employe, "guichet", prompts.systeme_employe(self.employe.nom, self.employe.persona),
-                prompts.utilisateur_employe(self.horloge.libelle(self.t), consigne, self.caisse.solvable(),
-                                            self.part_retiree(), len(self.files[ag]), question,
-                                            self._textes_rappel(rappel)),
-                prompts.valider_employe))
+        if not (ag == self.employe.lieu and self.employe.type == "llm" and self.llm is not None):
+            self._repondre_au_guichet(a, ag, eid, question, consigne)
+            return
+        rappel = self._rappeler([self.employe], [f"Un client demande : {question}"])[0]
+        rq = self._requete(
+            self.employe, "guichet", prompts.systeme_employe(self.employe.nom, self.employe.persona),
+            prompts.utilisateur_employe(self.horloge.libelle(self.t), consigne, self.caisse.solvable(),
+                                        self.part_retiree(), len(self.files[ag]), question,
+                                        self._textes_rappel(rappel)),
+            prompts.valider_employe)
+        e = Echange(self.llm.soumettre(rq), self.t, a, ag, eid, question, consigne, rappel)
+        if self._attendre([e.future]) and e.future.done():
+            self._recevoir_echange(e, "dans_le_pas")
+        else:
+            self._echanges.append(e)
+
+    def _recevoir_echanges(self) -> None:
+        """Réponses en retard de l'employé : appliquées dans l'ordre des questions."""
+        restants = []
+        for e in self._echanges:
+            if e.future.done():
+                self._recevoir_echange(e, "en_retard")
+            else:
+                restants.append(e)
+        self._echanges = restants
+
+    def _recevoir_echange(self, e: Echange, voie: str) -> None:
+        llm = e.future.result()
+        self._publier_appels(llm)
+        if not llm.ok:
+            self.replis += 1
+        self._repondre_au_guichet(e.client, e.agence, e.eid, e.question, e.consigne, llm, e.rappel, e.t0, voie)
+
+    def _repondre_au_guichet(self, a: Deposant, ag: str, eid: str, question: str, consigne: str, llm=None,
+                             rappel=None, t0: int | None = None, voie: str | None = None) -> None:
+        """La réponse de l'employé : celle du LLM s'il a répondu, sinon celle de la règle (consigne)."""
+        R = self.R
         if llm is not None and llm.ok:
             elude, reponse = llm.donnees["action"] == "eluder", llm.donnees["reponse"]
         else:
@@ -798,8 +862,8 @@ class Simulation:
         if ag == self.employe.lieu:                 # le personnage « employé d'agence » tient le guichet du Bourg
             if call_id is not None:
                 did = self._decision(self.employe, "eluder" if elude else "repondre", None,
-                                     llm.donnees["justification"], [cid], call_id, rappel=rappel)
-                self._verifier_c6(self.employe, rappel, did)
+                                     llm.donnees["justification"], [cid], call_id, t0, rappel, voie)
+                self._verifier_c6(self.employe, rappel, did, t0)
                 if self.memoire is not None:
                     self._souvenir(self.employe, f"un client m'a demandé « {question} » ; j'ai répondu « {reponse} »",
                                    "guichet", 0.5, [cid])
@@ -862,8 +926,8 @@ class Simulation:
         file_totale = sum(len(f) for f in self.files.values())
         part = self.part_retiree()
         if self.direction.type == "llm" and self.llm is not None:
-            # La direction délibère sans arrêter la vallée : sa décision s'applique quand la réponse arrive,
-            # avec t_sim_contexte = l'instant où elle a commencé à réfléchir (C3).
+            # Comme tout appel LLM : appliquée dans ce pas si la réponse arrive avant l'échéance, sinon au pas
+            # où elle arrive, avec t_sim_contexte = l'instant où la direction a commencé à réfléchir (C3).
             if self._deliberation is None:
                 art = self.cfg["article"]
                 rappel = self._rappeler([self.direction], [f"Faut-il publier un communiqué ? {part:.0%} retirés, "
@@ -876,10 +940,12 @@ class Simulation:
                                                   self._dernier_communique, self._textes_rappel(rappel)),
                     prompts.valider_direction)
                 self._deliberation = (self.llm.soumettre(rq), self.t, rappel)
+                if self._attendre([self._deliberation[0]]):
+                    self._recevoir_deliberation("dans_le_pas")
             return
         self._direction_regle(file_totale, part)
 
-    def _recevoir_deliberation(self) -> None:
+    def _recevoir_deliberation(self, voie: str = "en_retard") -> None:
         if self._deliberation is None or not self._deliberation[0].done():
             return
         future, t0, rappel = self._deliberation
@@ -891,7 +957,7 @@ class Simulation:
         if res.ok:
             d = res.donnees
             did = self._decision(self.direction, d["action"], None, d["justification"],
-                                 call_id=res.requete.call_id, t_contexte=t0, rappel=rappel)
+                                 call_id=res.requete.call_id, t_contexte=t0, rappel=rappel, voie=voie)
             if self.memoire is not None:
                 self._souvenir(self.direction, f"{self.horloge.libelle(t0)} : j'ai décidé {DECIDE[d['action']]}"
                                + (f" (ton {d['ton']}) : « {d['texte']} »" if d["action"] == "publier_communique" else "")

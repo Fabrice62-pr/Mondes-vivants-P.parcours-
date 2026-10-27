@@ -45,7 +45,7 @@ TABLES = {
     "evenements": (None, ["event_id", "type", "producer AS producteur", "t_emit", "causes", "payload"]),
     "decisions": ("decision.made", ["event_id", _t("agent_id"), _t("type"), _t("action"), _t("regle_id"),
                                     _t("justification"), _t("t_sim_contexte", "INTEGER"), _t("call_id"),
-                                    _t("souvenirs", "LISTE"), _t("documents", "JSON"), "causes"]),
+                                    _t("souvenirs", "LISTE"), _t("documents", "JSON"), _t("voie"), "causes"]),
     "llm_appels": ("llm.called", [_t("call_id"), _t("agent_id"), _t("usage"), _t("fournisseur"), _t("modele"),
                                   _t("tier"), _t("tokens_entree", "INTEGER"), _t("tokens_sortie", "INTEGER"),
                                   _t("latence_ms", "INTEGER"), _t("statut"), _t("essai", "INTEGER")]),

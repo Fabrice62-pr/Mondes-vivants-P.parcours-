@@ -16,7 +16,7 @@ import yaml
 from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from engine.config import charger_config as load_config  # noqa: E402
+from engine.config import charger_config as load_config, echeance  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"
@@ -90,8 +90,10 @@ def check_configs() -> None:
                 errors.append(f"{name} : {p['id']} doit avoir un modèle de catégorie « grand »")
             if not p.get("justification"):
                 errors.append(f"{name} : {p['id']} sans justification d'attribution (A5)")
-        if cfg["mode"] not in ("synchrone", "asynchrone"):
-            errors.append(f"{name} : mode inconnu {cfg['mode']}")
+        try:
+            echeance(cfg)
+        except (ValueError, KeyError, TypeError) as e:
+            errors.append(f"{name} : mode {cfg['mode']} mal configuré ({e})")
         print(f"config {name} : {pop['deposants']} déposants, {pop['part_regles']:.0%} à règles, "
               f"{len(cfg['personnages_principaux'])} personnages principaux")
 

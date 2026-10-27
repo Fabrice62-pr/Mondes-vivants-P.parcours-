@@ -83,6 +83,14 @@
         "string",
         "null"
       ]
+    },
+    "voie": {
+      "enum": [
+        "dans_le_pas",
+        "en_retard",
+        null
+      ],
+      "description": "Décision LLM : appliquée dans le pas où la requête est partie (réponse arrivée avant l'échéance) ou en retard, à un pas suivant. null pour une décision par règle. Absent dans les runs antérieurs au mode hybride."
     }
   },
   "required": [
@@ -96,7 +104,7 @@
     "souvenirs",
     "call_id"
   ],
-  "description": "t_sim_contexte = instant simulé de la photographie du monde utilisée pour décider. L'enveloppe porte t_sim = instant où la décision s'applique. En mode asynchrone les deux diffèrent (C3, C6).",
+  "description": "t_sim_contexte = instant simulé de la photographie du monde utilisée pour décider. L'enveloppe porte t_sim = instant où la décision s'applique. Pour une décision en retard (voie = en_retard), les deux diffèrent (C3, C6).",
   "examples": [
     {
       "agent_id": "boulangere",

@@ -12,8 +12,17 @@
     "mode": {
       "enum": [
         "synchrone",
-        "asynchrone"
+        "asynchrone",
+        "hybride"
       ]
+    },
+    "echeance_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Attente maximale des réponses LLM dans un pas, en secondes réelles : null en synchrone (sans limite), 0 en asynchrone. Absent dans les runs antérieurs au mode hybride."
     },
     "config_nom": {
       "type": "string",

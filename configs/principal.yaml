@@ -3,9 +3,13 @@
 
 nom: principal
 graine: 1                       # fixe l'attribution des modèles, les profils et les tirages aléatoires
-mode: synchrone                 # synchrone | asynchrone (C4)
+mode: synchrone                 # synchrone | asynchrone | hybride (C4)
 asynchrone:
   rythme_s: 0.5                 # secondes réelles par pas de 15 min ; une réponse LLM de 1,5 s arrive 3 pas plus tard
+hybride:
+  echeance_s: 3                 # le pas attend les réponses LLM au plus 3 s réelles ; les retardataires s'appliquent
+                                # au pas où elles arrivent (synchrone = échéance infinie, asynchrone = échéance nulle)
+  rythme_s: 0.5                 # secondes réelles entre deux pas, comme en asynchrone
 
 horloge:
   pas_min: 15                   # 1 pas = 15 minutes simulées

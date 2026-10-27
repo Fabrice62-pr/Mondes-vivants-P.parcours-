@@ -189,7 +189,8 @@ func _build_left(root: Control) -> void:
 	_mode_ob = OptionButton.new()
 	_mode_ob.add_item("Mode synchrone : tous agissent au même pas")
 	_mode_ob.add_item("Mode asynchrone : chacun à son rythme, latences réelles")
-	_mode_ob.tooltip_text = "Asynchrone : un agent LLM qui réfléchit n'arrête pas la vallée ; sa décision arrive avec la latence réelle du modèle (C4)."
+	_mode_ob.add_item("Mode hybride : le pas attend jusqu'à l'échéance, les retardataires suivent")
+	_mode_ob.tooltip_text = "Synchrone : le pas attend toutes les réponses LLM.\nAsynchrone : il n'en attend aucune ; chaque décision arrive avec la latence réelle du modèle.\nHybride : il les attend au plus quelques secondes (hybride.echeance_s) ; les réponses en retard s'appliquent au pas où elles arrivent (C4)."
 	v.add_child(_mode_ob)
 	var row := HBoxContainer.new()
 	var go := Button.new()
@@ -484,7 +485,8 @@ func on_runs(runs: Array) -> void:
 			_cmp_curves.queue_redraw())
 		_cmp_grid.add_child(cb)
 		var cells := [
-			"%s%s%s" % [str(r["config"]), " · LLM" if r.get("llm", false) else "", " · async" if r.get("mode", "") == "asynchrone" else ""],
+			"%s%s%s" % [str(r["config"]), " · LLM" if r.get("llm", false) else "",
+				{"asynchrone": " · async", "hybride": " · hybride"}.get(r.get("mode", ""), "")],
 			str(r["graine"]),
 			str(r["deposants"]) if r["deposants"] != null else "—",
 			("%.2f" % float(r["icc_max"])) if r["icc_max"] != null else "—",
@@ -608,7 +610,7 @@ func _on_launch() -> void:
 	_paused = false
 	_pause_b.text = "Pause"
 	main.launch_run(_config_ob.get_item_text(_config_ob.selected), int(_dep_sb.value), int(_seed_sb.value),
-		_rythme_s.value, _llm_cb.button_pressed, "asynchrone" if _mode_ob.selected == 1 else "synchrone")
+		_rythme_s.value, _llm_cb.button_pressed, ["synchrone", "asynchrone", "hybride"][_mode_ob.selected])
 
 
 func _set_rythme(x: float) -> void:
@@ -844,6 +846,9 @@ func show_agent(a: AgentView) -> void:
 		match d.get("type", "regles"):
 			"llm":
 				lines.append("Décision du LLM %s (appel %s)" % [a.modele, d["call_id"]])
+				if d.get("voie", "") == "en_retard":
+					lines.append("[color=#f0b46a]Réponse arrivée en retard : décidée %d min simulées plus tôt[/color]" % [
+						int(d["t_sim"]) - int(d["t_sim_contexte"])])
 			"repli_regles":
 				lines.append("[color=#f0b46a]Repli sur la règle %s : l'appel LLM a échoué[/color]" % d["regle_id"])
 			_:

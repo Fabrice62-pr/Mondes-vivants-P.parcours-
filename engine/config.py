@@ -29,6 +29,22 @@ def charger_config(chemin: str | Path) -> dict:
     return cfg
 
 
+def echeance(cfg: dict) -> float | None:
+    """Attente maximale des réponses LLM dans un pas, en secondes réelles (C4) : None = sans limite
+    (synchrone), 0 = aucune attente (asynchrone), hybride.echeance_s entre les deux."""
+    mode = cfg["mode"]
+    if mode == "synchrone":
+        return None
+    if mode == "asynchrone":
+        return 0.0
+    if mode == "hybride":
+        e = float(cfg["hybride"]["echeance_s"])
+        if e < 0:
+            raise ValueError(f"hybride.echeance_s négative : {e}")
+        return e
+    raise ValueError(f"mode inconnu : {mode}")
+
+
 def empreinte(cfg: dict) -> str:
     """Empreinte stable d'une configuration, publiée dans run.started (rejouabilité, E3)."""
     brut = json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)

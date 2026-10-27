@@ -21,8 +21,9 @@ le bridge, puis ouvre ce projet dans Godot. Ensuite, dans Godot :
 2. réglez le rythme, en secondes réelles par pas de 15 minutes simulées ;
 3. laissez cochée la case **Agents LLM** pour que les personnages et les déposants réfléchissent avec un
    LLM gratuit, ou décochez-la pour un run uniquement à règles, sans consommer de quota ;
-4. choisissez le **mode** : synchrone (tous agissent au même pas) ou asynchrone (chacun à son rythme, les
-   décisions arrivent avec la latence réelle des modèles) ;
+4. choisissez le **mode** : synchrone (tous agissent au même pas), asynchrone (chacun à son rythme, les
+   décisions arrivent avec la latence réelle des modèles) ou hybride (le pas attend les réponses quelques
+   secondes au plus ; celles qui arrivent après s'appliquent plus tard, et l'inspection l'indique) ;
 5. cliquez sur **Lancer**.
 
 **Rejouer un run** : bouton **Comparer les runs passés**, puis **Rejouer** sur la ligne du run. Le run

@@ -1,25 +1,39 @@
-"""Mémoire des agents et base de connaissances (A1, F1, C6), dans Chroma.
+"""Mémoire des agents et base de connaissances (A1, F1, C6), dans PostgreSQL avec pgvector.
 
-- **Corpus** (`rag/corpus.yaml`) : connaissances publiques de la vallée, antérieures au run. Collection
-  persistante dans data/rag/chroma, reconstruite quand le corpus ou le modèle de plongement change.
-- **Souvenirs** : ce que chaque agent LLM a appris pendant le run (memory.written). Collection propre au
-  run, **en mémoire vive** : un run interrompu ne laisse rien sur le disque, et l'historique des souvenirs
-  reste dans les événements (rejeu, semaine 7).
+- **Corpus** (`rag/corpus.yaml`) : connaissances publiques de la vallée, antérieures au run. Table `corpus`,
+  recalculée quand le corpus ou le modèle de plongement change.
+- **Souvenirs** : ce que chaque agent LLM a appris pendant le run (memory.written). Table `souvenirs`,
+  **conservée après le run** : on peut l'interroger en SQL (requetes/souvenirs_postgres.sql). Un agent ne
+  rappelle jamais que les souvenirs de son propre run.
+
+Le schéma est dans `rag/schema.sql`. PostgreSQL range et cherche les vecteurs ; il ne les calcule pas : les
+plongements viennent toujours du modèle local (rag/plongement.py).
 
 Rappel d'un souvenir : on cherche les plus proches de la situation, **parmi les souvenirs de l'agent
-datés d'avant l'instant de la décision** (filtre dans la requête), puis on les reclasse comme dans
+datés d'avant l'instant de la décision** (filtre dans la requête SQL), puis on les reclasse comme dans
 « Generative Agents » (Park et al., 2023) : similarité + importance + fraîcheur.
 """
 import hashlib
 import json
 import math
-import re
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+import psycopg
 import yaml
+from pgvector.psycopg import register_vector
 
 RACINE = Path(__file__).resolve().parent
+# Service postgres de docker-compose.yml. 127.0.0.1 et non localhost : sous Windows, localhost essaie d'abord
+# l'IPv6 ::1, où le conteneur n'écoute pas, et la connexion peut alors attendre plus d'une minute.
+URL_DEFAUT = "postgresql://guichet:guichet@127.0.0.1:5433/guichet"
+CANDIDATS = 12                     # souvenirs les plus proches lus en base, avant le reclassement
+
+
+def url_postgres() -> str:
+    return os.environ.get("POSTGRES_URL", URL_DEFAUT)
 
 
 @dataclass
@@ -42,70 +56,70 @@ class Document:
     t_sim_doc: int | None = None
 
 
-def _nom_collection(texte: str) -> str:
-    """Chroma : 3 à 63 caractères, lettres, chiffres, « . _ - »."""
-    return re.sub(r"[^A-Za-z0-9._-]", "-", texte)[:63].strip("-._") or "collection"
+def _vecteur(v) -> np.ndarray:
+    return np.asarray(v, dtype=np.float32)
 
 
 class Memoire:
-    def __init__(self, plongement, run_id: str, dossier: Path | None = None, cfg: dict | None = None):
-        import chromadb                                   # import tardif : bibliothèque lourde
-        from chromadb.config import Settings
+    def __init__(self, plongement, run_id: str, url: str | None = None, cfg: dict | None = None):
         cfg = cfg or {}
         self.plongement = plongement
+        self.run_id = run_id
         self.k_souvenirs = int(cfg.get("k_souvenirs", 4))
         self.k_documents = int(cfg.get("k_documents", 2))
         self.demi_vie_h = float(cfg.get("demi_vie_h", 24))
         self.max_reflexions = int(cfg.get("max_reflexions", 1))
-        reglages = Settings(anonymized_telemetry=False, allow_reset=False)
-        self._vive = chromadb.EphemeralClient(settings=reglages)
-        if dossier is None:
-            self._client = self._vive
-        else:
-            dossier.mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(path=str(dossier), settings=reglages)
-        self.corpus = self._charger_corpus()
-        self._souvenirs = self._vive.get_or_create_collection(_nom_collection(f"souvenirs-{run_id}"),
-                                                              metadata={"hnsw:space": "cosine"})
-        self._en_attente: list[tuple[str, str, dict]] = []
+        url = url or url_postgres()
+        try:
+            self._cx = psycopg.connect(url, autocommit=True, connect_timeout=5)
+        except psycopg.OperationalError as e:
+            p = psycopg.conninfo.conninfo_to_dict(url)
+            raise RuntimeError(f"PostgreSQL injoignable ({p.get('host')}:{p.get('port')}, base {p.get('dbname')}) : "
+                               f"démarrez-le avec « docker compose up -d postgres » ou vérifiez POSTGRES_URL. {e}") from e
+        self._cx.execute((RACINE / "schema.sql").read_text(encoding="utf-8"))
+        register_vector(self._cx)                         # après CREATE EXTENSION : le type vector doit exister
+        with self._cx.transaction():                      # un run relancé sous le même nom repart de zéro
+            self._cx.execute("DELETE FROM memoire_runs WHERE run_id = %s", (run_id,))
+            self._cx.execute("INSERT INTO memoire_runs (run_id, modele_plongement) VALUES (%s, %s)",
+                             (run_id, plongement.nom))
+        self._charger_corpus()
+        self._en_attente: list[tuple] = []
         self.n_souvenirs = 0
 
     # ------------------------------------------------------------ corpus
 
-    def _charger_corpus(self):
+    def _charger_corpus(self) -> None:
         docs = yaml.safe_load((RACINE / "corpus.yaml").read_text(encoding="utf-8"))["documents"]
-        empreinte = hashlib.sha256((self.plongement.nom + json.dumps(docs, sort_keys=True, ensure_ascii=False))
-                                   .encode("utf-8")).hexdigest()[:12]
-        nom = _nom_collection(f"corpus-{empreinte}")
-        existantes = {c.name if hasattr(c, "name") else c for c in self._client.list_collections()}
-        if nom in existantes:
-            return self._client.get_collection(nom)
-        for vieux in existantes:                         # ancien corpus ou ancien modèle : on le remplace
-            if str(vieux).startswith("corpus-"):
-                self._client.delete_collection(vieux)
-        col = self._client.create_collection(nom, metadata={"hnsw:space": "cosine"})
+        self.empreinte = hashlib.sha256((self.plongement.nom + json.dumps(docs, sort_keys=True, ensure_ascii=False))
+                                        .encode("utf-8")).hexdigest()[:12]
+        self.n_documents = len(docs)
+        deja = self._cx.execute("SELECT count(*) FROM corpus WHERE empreinte = %s", (self.empreinte,)).fetchone()[0]
+        if deja == len(docs):
+            return
         textes = [f"{d['titre']}. {' '.join(d['texte'].split())}" for d in docs]
-        col.add(ids=[d["doc_id"] for d in docs], documents=textes, embeddings=self.plongement.passages(textes),
-                metadatas=[{"titre": d["titre"]} for d in docs])
-        return col
+        vecteurs = self.plongement.passages(textes)
+        with self._cx.transaction(), self._cx.cursor() as cur:
+            cur.execute("DELETE FROM corpus")             # ancien corpus ou ancien modèle : on le remplace
+            cur.executemany("INSERT INTO corpus (empreinte, doc_id, titre, texte, embedding) VALUES (%s, %s, %s, %s, %s)",
+                            [(self.empreinte, d["doc_id"], d["titre"], t, _vecteur(v))
+                             for d, t, v in zip(docs, textes, vecteurs)])
 
     # ------------------------------------------------------------ souvenirs
 
     def ecrire(self, memoire_id: str, agent_id: str, texte: str, t_sim: int, importance: float,
                doc_id: str | None = None, nature: str = "observation") -> None:
         """Le souvenir est mis en attente ; `vider` calcule les plongements en un seul lot."""
-        meta = {"agent_id": agent_id, "t_sim": int(t_sim), "importance": float(importance), "nature": nature}
-        if doc_id:
-            meta["doc_id"] = doc_id
-        self._en_attente.append((memoire_id, texte, meta))
+        self._en_attente.append((memoire_id, agent_id, texte, int(t_sim), float(importance), nature, doc_id))
 
     def vider(self) -> None:
         if not self._en_attente:
             return
-        ids, textes, metas = zip(*self._en_attente)
-        self._souvenirs.add(ids=list(ids), documents=list(textes), metadatas=list(metas),
-                            embeddings=self.plongement.passages(list(textes)))
-        self.n_souvenirs += len(ids)
+        vecteurs = self.plongement.passages([s[2] for s in self._en_attente])
+        with self._cx.transaction(), self._cx.cursor() as cur:
+            cur.executemany("INSERT INTO souvenirs (run_id, memoire_id, agent_id, texte, t_sim, importance, nature, "
+                            "doc_id, embedding) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                            [(self.run_id, *s, _vecteur(v)) for s, v in zip(self._en_attente, vecteurs)])
+        self.n_souvenirs += len(self._en_attente)
         self._en_attente = []
 
     def rappeler(self, requetes: list[tuple[str, str, int]]) -> list[tuple[list[Souvenir], list[Document]]]:
@@ -117,31 +131,28 @@ class Memoire:
         vecteurs = self.plongement.questions([q for _, q, _ in requetes])
         out = []
         for (agent_id, _, t), v in zip(requetes, vecteurs):
+            v = _vecteur(v)
             out.append((self._souvenirs_de(agent_id, v, t), self._documents(v)))
         return out
 
-    def _souvenirs_de(self, agent_id: str, v: list[float], t: int) -> list[Souvenir]:
+    def _souvenirs_de(self, agent_id: str, v: np.ndarray, t: int) -> list[Souvenir]:
         if self.k_souvenirs <= 0:
             return []
-        filtre = {"$and": [{"agent_id": agent_id}, {"t_sim": {"$lte": int(t)}}]}
-        n = self._souvenirs.count()
-        if n == 0:
-            return []
-        r = self._souvenirs.query(query_embeddings=[v], n_results=min(12, n), where=filtre,
-                                  include=["documents", "metadatas", "distances"])
+        lignes = self._cx.execute(
+            "SELECT memoire_id, texte, t_sim, importance, nature, doc_id, embedding <=> %s AS distance "
+            "FROM souvenirs WHERE run_id = %s AND agent_id = %s AND t_sim <= %s "
+            "ORDER BY distance, memoire_id LIMIT %s", (v, self.run_id, agent_id, int(t), CANDIDATS)).fetchall()
         candidats = []
-        reflexions = 0
-        for mid, txt, meta, dist in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0]):
+        for mid, txt, t_sim, importance, nature, doc_id, dist in lignes:
             similarite = 1.0 - float(dist)
-            fraicheur = math.pow(0.5, (t - int(meta["t_sim"])) / 60.0 / self.demi_vie_h)
-            score = similarite + 0.5 * float(meta["importance"]) + 0.5 * fraicheur
-            candidats.append(Souvenir(mid, txt, int(meta["t_sim"]), float(meta["importance"]), round(score, 4),
-                                      meta.get("doc_id")))
-            candidats[-1].nature = meta.get("nature", "observation")
+            fraicheur = math.pow(0.5, (t - t_sim) / 60.0 / self.demi_vie_h)
+            score = similarite + 0.5 * importance + 0.5 * fraicheur
+            candidats.append(Souvenir(mid, txt, t_sim, importance, round(score, 4), doc_id, nature))
         candidats.sort(key=lambda s: -s.score)
         # Au plus un souvenir de ses propres décisions : sinon l'agent ne fait que ressasser sa décision
         # précédente (constaté au premier essai : 4 rappels sur 4 étaient des « j'ai décidé d'attendre »).
         out = []
+        reflexions = 0
         for s in candidats:
             if s.nature == "reflexion":
                 if reflexions >= self.max_reflexions:
@@ -150,16 +161,20 @@ class Memoire:
             out.append(s)
         return out[:self.k_souvenirs]
 
-    def _documents(self, v: list[float]) -> list[Document]:
+    def _documents(self, v: np.ndarray) -> list[Document]:
         if self.k_documents <= 0:
             return []
-        r = self.corpus.query(query_embeddings=[v], n_results=self.k_documents,
-                              include=["documents", "metadatas", "distances"])
-        return [Document(did, meta["titre"], txt, round(1.0 - float(dist), 4))
-                for did, txt, meta, dist in zip(r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])]
+        lignes = self._cx.execute(
+            "SELECT doc_id, titre, texte, embedding <=> %s AS distance FROM corpus WHERE empreinte = %s "
+            "ORDER BY distance, doc_id LIMIT %s", (v, self.empreinte, self.k_documents)).fetchall()
+        return [Document(did, titre, txt, round(1.0 - float(dist), 4)) for did, titre, txt, dist in lignes]
 
     def fermer(self) -> None:
+        """Fin du run : les derniers souvenirs sont écrits et le run est marqué terminé. Rien n'est effacé."""
+        if self._cx.closed:
+            return
         try:
-            self._vive.delete_collection(self._souvenirs.name)
-        except Exception:
-            pass
+            self.vider()
+            self._cx.execute("UPDATE memoire_runs SET fin = now() WHERE run_id = %s", (self.run_id,))
+        finally:
+            self._cx.close()

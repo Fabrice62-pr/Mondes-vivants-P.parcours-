@@ -349,6 +349,8 @@ func _on_decision(p: Dictionary, t: int) -> void:
 	a.update_color()
 	if a.named:
 		var source: String = ("LLM " + a.modele) if p["type"] == "llm" else str(p["regle_id"])
+		if p.get("voie", "") == "en_retard":
+			source += ", en retard de %d min" % (t - int(p["t_sim_contexte"]))
 		hud.log_line("[b]%s[/b] décide : %s [color=#aebbb4](%s : %s)[/color]" % [
 			a.display_name, p["action"], source, p["justification"]])
 

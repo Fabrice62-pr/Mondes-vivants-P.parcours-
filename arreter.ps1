@@ -1,6 +1,6 @@
 ﻿# Arrête le bridge, le service d'indicateurs et le moteur ou le rejeu éventuellement en cours.
-#   .\arreter.ps1           arrête tout sauf Kafka
-#   .\arreter.ps1 -Kafka    arrête aussi Kafka (docker compose stop)
+#   .\arreter.ps1           arrête tout sauf Docker (Kafka, PostgreSQL)
+#   .\arreter.ps1 -Kafka    arrête aussi Kafka et PostgreSQL (docker compose stop)
 param([switch]$Kafka)
 
 Set-Location $PSScriptRoot
@@ -14,5 +14,5 @@ foreach ($p in $procs) {
 Remove-Item -ErrorAction SilentlyContinue (Join-Path $PSScriptRoot "data\logs\bridge.pid")
 if ($Kafka) {
     docker compose stop
-    Write-Host "Kafka arrêté."
+    Write-Host "Kafka et PostgreSQL arrêtés (les souvenirs restent dans le volume guichet-pg)."
 }

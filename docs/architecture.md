@@ -5,24 +5,34 @@
 ```
                 ┌──────────────────────── Kafka ─────────────────────────┐
 ┌──────────┐    │ guichet.events / commands / llm.* / indicators / ...    │    ┌──────────────┐
-│ MOTEUR   │◄──►│                                                        │◄──►│ Bridge WS    │◄──► Godot
-│ Python   │    └──────┬──────────────────┬───────────────────┬───────────┘    └──────────────┘   (vue + leviers)
+│ MOTEUR   │◄──►│                                                        │◄──►│ Bridge       │◄──► Godot
+│ Python   │    └──────┬──────────────────┬───────────────────┬───────────┘    │ FastAPI      │   (vue + leviers)
+│          │           │                  │                   │                └──────────────┘
 └────┬─────┘    ┌──────▼──────┐   ┌───────▼────────┐  ┌───────▼────────┐
      │          │ Passerelle  │   │ Indicateurs    │  │ Archiveur      │
      │          │ LLM         │   │                │  │ DuckDB/Parquet │
      │          └──────┬──────┘   └────────────────┘  └────────────────┘
-     └─────────────────┴──► Chroma (corpus + mémoires) ; embeddings locaux (GPU)
+     └─────────────────┴──► PostgreSQL + pgvector (corpus + souvenirs) ; embeddings locaux (GPU)
 ```
 
 - **Moteur** : la source de vérité. Il porte l'horloge, le monde (lieux, agences, files), la Caisse et les
   agents. Il tourne aussi **sans Godot** pour les runs répétés.
 - **Passerelle LLM** (`llm/`) : attribution figée des modèles, limites de débit par modèle, nouveaux
-  essais, validation des sorties, incidents, mesure du coût. **En mode synchrone, elle est appelée
-  directement par le moteur** (bibliothèque, appels en parallèle sur des fils d'exécution) : le pas attend
-  de toute façon toutes les réponses, et passer par Kafka n'ajouterait que de la latence. Ses `llm.called`
-  partent dans `guichet.llm.responses`. Le topic `guichet.llm.requests` servira au mode asynchrone
-  (semaine 7), où la passerelle deviendra un service séparé.
+  essais, validation des sorties, incidents, mesure du coût. Elle est appelée **directement par le
+  moteur** (bibliothèque, appels en parallèle sur des fils d'exécution), et ses `llm.called` partent dans
+  `guichet.llm.responses`.
+- **Traitement hybride (C4)** : un seul mécanisme pour tous les appels LLM. Les requêtes d'un pas partent
+  en parallèle et le pas les attend **au plus `hybride.echeance_s` secondes réelles**. Une réponse arrivée
+  à temps s'applique dans le pas (`decision.made.voie = dans_le_pas`) ; une réponse en retard s'applique au
+  pas où elle arrive, datée de l'instant où l'agent a commencé à réfléchir (`voie = en_retard`,
+  `t_sim_contexte`). Les deux voies coexistent dans un même run. Le mode synchrone (échéance infinie) et le
+  mode asynchrone (échéance nulle) sont les deux cas limites du même code.
 - **Godot** : affichage et interaction uniquement. Il ne calcule rien de ce qui compte pour les résultats.
+- **Bridge** (`services/bridge.py`) : application **FastAPI** servie par uvicorn sur le port 8765. Godot s'y
+  connecte par WebSocket (`/ws`) : il reçoit le flux Kafka et envoie ses actions (`lancer`, `commande`…),
+  vérifiées par des modèles Pydantic. Les mêmes actions existent en routes REST, documentées par Swagger
+  (`/docs`). Le bridge lance le moteur ou le rejeu, publie les commandes dans `guichet.commands` (DLQ si
+  non conformes) ; il ne calcule rien et ne détient aucune clé API.
 - **Service d'indicateurs** (`services/indicateurs.py`) : consommateur Kafka indépendant du moteur. Il
   recalcule l'ICC à partir des instantanés (`icc_flux`), le moyenne sur 2 h (`icc_2h`) et mesure son
   retard (C7). Pendant un rejeu, son ICC recalculé est celui du moteur : la preuve que les indicateurs se
@@ -40,7 +50,7 @@
 | État courant du monde | **Mémoire du moteur** + topic compacté `guichet.state` | ~150 agents | à chaque pas | immédiate | le run | Le moteur lit et écrit l'état à chaque pas ; le topic compacté donne un instantané à Godot quand il (re)connecte |
 | Historique des runs | `events.jsonl` pendant le run, puis **Parquet** (`data/runs/<run_id>/archive/`) lu par **DuckDB** (`data/archive.duckdb`, des vues seulement) | ~2 000 à 10 000 événements par run, des centaines de milliers au total | écriture pendant le run, archivage à la fin, lecture en analyse | secondes | permanente | Requêtes SQL reproductibles entre runs (F5, `requetes/*.sql`) ; colonnes compressées ; aucun serveur à faire tourner |
 | Instantanés pour le rejeu | `etats.jsonl` (`data/runs/<run_id>/`) | un par pas, ~15 Ko chacun | écriture pendant le run, lecture au rejeu | — | permanente | Le rejeu (E3) republie les mêmes messages que pendant le run, instantanés compris |
-| Base de connaissances et mémoires | **Chroma** (`data/rag/`) | ~25 documents + quelques milliers de souvenirs | lecture à chaque décision LLM | < 50 ms | corpus permanent, mémoires par run | Recherche sémantique filtrée par agent et par `t_sim` (A1, F1, C6) |
+| Base de connaissances et mémoires | **PostgreSQL + pgvector** (conteneur `guichet-postgres`, port 5433, volume `guichet-pg` ; schéma `rag/schema.sql`) | ~25 documents + quelques milliers de souvenirs par run | écriture par lots à chaque pas, lecture à chaque décision LLM | < 50 ms | permanente (corpus et souvenirs de tous les runs) | Recherche sémantique exacte filtrée par run, par agent et par `t_sim` en SQL (A1, F1, C6) ; souvenirs interrogeables après le run (`requetes/souvenirs_postgres.sql`). Le carnet (10 dernières notes) reste en mémoire du moteur |
 
 ## Répartition des agents (A5, A6)
 

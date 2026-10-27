@@ -72,7 +72,7 @@ class Deposant:
     phrase_llm: str | None = None # ce que l'agent dit à ses voisins, tiré de sa dernière réflexion
     call_phrase: str | None = None
     vu_files: dict = field(default_factory=dict)    # agence -> longueur de file notée dans le carnet
-    reflexion: object = None      # mode asynchrone : (future, t_contexte, rappel) d'une réflexion en cours
+    reflexion: object = None      # (future, t_contexte, rappel) d'une réflexion dont la réponse n'est pas appliquée
 
     def __post_init__(self):
         self.depot_initial = self.depot

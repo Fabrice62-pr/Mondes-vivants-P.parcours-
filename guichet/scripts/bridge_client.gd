@@ -1,12 +1,12 @@
 class_name BridgeClient
 extends Node
-## Connexion WebSocket au bridge Python (services/bridge.py), qui relaie Kafka.
+## Connexion WebSocket au bridge FastAPI (services/bridge.py, route /ws), qui relaie Kafka.
 ## Se reconnecte automatiquement toutes les 2 secondes si le bridge n'est pas joignable.
 
 signal message_received(msg: Dictionary)
 signal connection_changed(connected: bool)
 
-var url := "ws://127.0.0.1:8765"
+var url := "ws://127.0.0.1:8765/ws"
 var connected := false
 var _ws: WebSocketPeer
 var _retry := 0.0

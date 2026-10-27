@@ -56,6 +56,26 @@ services:
             --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         $$T --bootstrap-server $$B --list
 
+  # Mémoire des agents (rag/memoire.py) : PostgreSQL avec l'extension pgvector.
+  # Port 5433 sur la machine hôte (le 5432 peut être pris par un PostgreSQL installé sous Windows) ;
+  # n'écoute que sur 127.0.0.1. Les tables sont créées par rag/memoire.py (rag/schema.sql).
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    container_name: guichet-postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: guichet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-guichet}
+      POSTGRES_DB: guichet
+    volumes:
+      - guichet-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guichet -d guichet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     container_name: guichet-kafka-ui
@@ -67,3 +87,6 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: guichet
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+
+volumes:
+  guichet-pg:                   # données PostgreSQL (souvenirs conservés d'un run à l'autre)

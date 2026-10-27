@@ -30,7 +30,7 @@ de la Caisse. L'ordre est garanti pour un même agent. L'ordre global d'un run s
 | Chaque conversation, avec son texte | — | C'est le vecteur du contexte commun (A2, B4) |
 | Variation de croyance avec sa cause | Recalcul identique sans variation | Traçabilité de l'indicateur jusqu'à sa cause (F6) |
 | Changement de longueur de file | Chaque pas d'attente | La file est ce que voient les passants |
-| Pas de l'horloge (`clock.tick`, toutes les 15 min simulées) | Les secondes réelles | Barrière en mode synchrone et repère d'affichage |
+| Pas de l'horloge (`clock.tick`, toutes les 15 min simulées) | Les secondes réelles | Échéance d'attente des réponses LLM (barrière en synchrone) et repère d'affichage |
 | Chaque appel LLM (coût, issue) | Le texte complet du prompt | Le coût (E4) passe dans le flux ; le prompt complet va directement dans l'archive |
 
 Ordre de grandeur : environ 30 000 à 60 000 événements par run de 7 jours avec 145 agents.
@@ -44,8 +44,10 @@ Ordre de grandeur : environ 30 000 à 60 000 événements par run de 7 jours ave
 | `t_proc` | Heure **réelle** de traitement | consommateur, au moment où il le traite |
 | `payload.t_sim_contexte` (`decision.made`) | Instant simulé de la photographie du monde utilisée pour décider | moteur |
 
-En mode asynchrone, une décision demandée à `t_sim = 4320` peut s'appliquer à `t_sim = 4335` parce que
-le LLM a mis du temps à répondre. L'enveloppe porte 4335 et `t_sim_contexte` porte 4320. Toute information
+En mode hybride ou asynchrone, une décision demandée à `t_sim = 4320` peut s'appliquer à `t_sim = 4335`
+parce que le LLM a répondu après l'échéance du pas. L'enveloppe porte 4335, `t_sim_contexte` porte 4320 et
+`voie` vaut `en_retard` ; une réponse arrivée à temps porte `voie = dans_le_pas` et les deux instants sont
+égaux. Toute information
 utilisée dont la date dépasse `t_sim_contexte`, ou que l'agent n'a jamais reçue, déclenche un
 `temporal.violation` (C6).
 

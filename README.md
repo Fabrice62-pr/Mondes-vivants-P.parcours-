@@ -8,7 +8,7 @@ Simulation multi-agents d'un bank run dans la vallée fictive de Brévanne. Une 
 | Dossier | Contenu |
 |---|---|
 | `guichet/` | Projet Godot 4.7, la **vue** : scène 3D, HUD, inspection d'agent, leviers (voir `guichet/README.md`) |
-| `services/` | `bridge.py` : relais WebSocket entre Godot et Kafka, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `comparaison.py` : résumés des runs pour Godot |
+| `services/` | `bridge.py` : bridge FastAPI entre Godot (WebSocket `/ws`) et Kafka, routes REST et Swagger sur `/docs`, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `comparaison.py` : résumés des runs pour Godot |
 | `requetes/` | Requêtes SQL reproductibles sur l'historique des runs (scénarios, coût, décisions, mémoire, sources de l'ICC, modèle unique par agent) |
 | `lancer.bat`, `arreter.bat` | Démarrage en un double-clic (Kafka, bridge, Godot) et arrêt |
 | `archives/` | Maquette Godot d'origine, où la simulation tournait dans Godot |
@@ -22,7 +22,7 @@ Simulation multi-agents d'un bank run dans la vallée fictive de Brévanne. Une 
 | `engine/` | Moteur de simulation : horloge, monde, Caisse, files, agents à règles, publication Kafka |
 | `tests/` | Tests automatiques (`pytest`) |
 | `llm/` | Passerelle LLM : fournisseurs gratuits, limites de débit, prompts et validation des réponses |
-| `rag/` | Mémoire des agents et RAG : corpus de la vallée, plongements locaux, Chroma |
+| `rag/` | Mémoire des agents et RAG : corpus de la vallée, plongements locaux, PostgreSQL + pgvector (`schema.sql`) |
 
 ## Démarrage rapide
 
@@ -66,8 +66,10 @@ copy .env.example .env
 # Sans aucun appel LLM (tous les agents à règles) : pour la mise au point, sans consommer de quota
 .venv\Scripts\python -m engine.run --config principal.yaml --sans-llm
 
-# Mode asynchrone (C4) : chaque agent agit à son rythme, latences réelles des LLM comprises
+# Modes (C4) : synchrone (le pas attend toutes les réponses LLM), asynchrone (il n'en attend aucune),
+# hybride (il les attend au plus --echeance secondes ; les réponses en retard s'appliquent à leur arrivée)
 .venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode asynchrone
+.venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode hybride --echeance 3
 ```
 
 ## Rejouer et interroger l'historique
