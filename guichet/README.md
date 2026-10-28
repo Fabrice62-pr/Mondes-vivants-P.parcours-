@@ -43,11 +43,15 @@ se reconnecte tout seul. Il peut même rejoindre un run déjà en cours.
 |---|---|
 | `scenes/main.tscn` | Scène principale (un seul nœud ; tout le reste est créé par script) |
 | `scripts/main.gd` | Reçoit les événements, place et anime les agents, gère la sélection d'un agent |
+| `scripts/sky_cycle.gd` | Ciel, soleil et lune réglés sur l'horloge simulée (jour, crépuscule, nuit) |
+| `scripts/nav_grid.gd` | Grille de marche des habitants : obstacles, routes préférées, chemins A* lissés |
 | `scripts/bridge_client.gd` | Connexion WebSocket au bridge, avec reconnexion automatique |
-| `scripts/agent_view.gd` | Un habitant à l'écran : silhouette, couleur, bulle de dialogue, déplacement |
+| `scripts/agent_view.gd` | Un habitant à l'écran : personnage animé, couleur, bulle de dialogue, trajet, allure |
 | `scripts/hud.gd` | Lancement, état de la Caisse, indicateurs (ICC, basculement), leviers, inspection, journal |
 | `scripts/agency.gd` | Une agence : emplacements de la file et panneau « FERMÉE » |
-| `scripts/world_builder.gd` | Construction de la vallée : terrain, routes, ponts, bâtiments, arbres |
+| `scripts/world_builder.gd` | Construction de la vallée : terrain, routes, ponts, lampadaires, bâtiments, arbres, herbe |
+| `shaders/` | Terrain, rivière animée, routes, feuillages et herbe au vent |
+| `assets/personnages/` | Personnage animé et ses animations (Universal Animation Library de Quaternius, licence CC0) |
 | `scripts/world_data.gd` | Coordonnées des lieux. **Doit rester identique à `../configs/monde.json`** (un test le vérifie) |
 | `scripts/camera_rig.gd` | Caméra orbitale |
 
@@ -65,7 +69,21 @@ se reconnecte tout seul. Il peut même rejoindre un run déjà en cours.
 
 **Couleurs des habitants** : vert calme, orange inquiet, rouge va retirer, gris a retiré, noir a perdu de
 l'argent, bleu personnel de la Caisse. Les cinq personnages principaux (la boulangère, le retraité,
-l'entrepreneur, l'employé d'agence, la direction) sont plus grands et portent leur nom.
+l'entrepreneur, l'employé d'agence, la direction) sont plus grands et portent leur nom. Vus de loin, les
+habitants sont légèrement grossis pour que leurs couleurs restent lisibles.
+
+**Déplacements** : les habitants suivent les routes quand le détour est raisonnable, contournent maisons,
+arbres et rivière (on traverse par les ponts) et gardent leurs distances. La cadence des pas suit leur
+vitesse : marche, petite course, course (les habitants qui se précipitent à l'agence courent). Dans une
+file, chacun avance d'un pas quand la file avance et regarde vers le guichet ; dans une conversation, les
+deux habitants se font face.
+
+Le temps simulé est très comprimé (15 minutes en 0,5 s par défaut) : pour ne pas décrocher du moteur, un
+trajet dure au plus 10 pas à l'écran, et les longs trajets se font donc en courant. **Plus le rythme est
+lent, plus les déplacements sont réalistes** : vers 2 s par pas, les habitants marchent ou trottinent à
+une allure humaine.
+
+**Jour et nuit** : le soleil suit l'heure simulée ; la nuit, fenêtres et lampadaires s'allument.
 
 **Indicateurs** (panneau de gauche), calculés par le moteur et affichés au rythme de la scène :
 - **ICC**, l'indice de contexte commun, avec sa courbe et le seuil d'émergence de 0,60 ;

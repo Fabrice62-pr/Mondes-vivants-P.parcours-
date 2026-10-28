@@ -27,6 +27,17 @@
   pas où elle arrive, datée de l'instant où l'agent a commencé à réfléchir (`voie = en_retard`,
   `t_sim_contexte`). Les deux voies coexistent dans un même run. Le mode synchrone (échéance infinie) et le
   mode asynchrone (échéance nulle) sont les deux cas limites du même code.
+- **Système 1 / Système 2** (`engine/systeme1.py`, `systeme1` dans la configuration) : quand un déposant
+  LLM a du nouveau, un jugement rapide et local (Système 1) répond à une seule question, « va-t-il retirer
+  son argent ? », avec une probabilité. Un « non » assez sûr (confiance ≥ `confiance_min`) est décidé sans
+  appel. Un « oui » est **toujours** vérifié par le LLM (Système 2), et une situation ambiguë lui est
+  confiée aussi. Pourquoi une seule question : dans le moteur, « attendre » et « rien » ont le même effet,
+  seul le retrait change la dynamique (95 % des réponses LLM mesurées étaient « attendre »). Deux moteurs :
+  `regle` (R-seuil, la confiance croît avec l'écart entre la pression et le seuil) et `nli` (mDeBERTa-v3
+  multilingue NLI, ~280 M de paramètres, en local sur le GPU, ~5 ms par agent, qui lit le carnet en
+  français et compare deux hypothèses opposées). En cas de panne du LLM, le Système 1 décide. Le Système
+  1 réduit les **rafales** d'appels qui saturaient les 6 appels simultanés : en hybride, 88 % des décisions
+  LLM arrivaient en retard, de 3 h 30 simulées en moyenne (mesure du 27/10/2026).
 - **Godot** : affichage et interaction uniquement. Il ne calcule rien de ce qui compte pour les résultats.
 - **Bridge** (`services/bridge.py`) : application **FastAPI** servie par uvicorn sur le port 8765. Godot s'y
   connecte par WebSocket (`/ws`) : il reçoit le flux Kafka et envoie ses actions (`lancer`, `commande`…),
@@ -38,7 +49,13 @@
   retard (C7). Pendant un rejeu, son ICC recalculé est celui du moteur : la preuve que les indicateurs se
   reproduisent à partir des seules données enregistrées (E3).
 - **Archiveur** (`services/archiveur.py`) : à la fin de chaque run, transforme `events.jsonl` en tables
-  Parquet ; DuckDB les interroge toutes ensemble (F5).
+  Parquet ; DuckDB les interroge toutes ensemble (F5). La table `runs` porte l'**étiquette** de la série
+  (`--etiquette`), le moteur du Système 1, la latence des appels et le retard des décisions LLM :
+  `requetes/etiquettes.sql` compare les séries.
+- **Runs interrompus** (`services/reconstitution.py`) : un run arrêté depuis Godot, fermé ou planté n'écrit
+  pas son `resume.json`. Le bridge le recalcule depuis `events.jsonl` dès que le moteur s'arrête, puis
+  l'archive (`runs.interrompu = true`) ; l'archiveur fait de même pour les anciens runs. La configuration
+  est écrite au démarrage du run, et `run.started.code` donne la version du code (commit, empreinte).
 - **Rejeu** (`services/rejeu.py`) : republie un run enregistré dans Kafka, pas après pas, sans calcul
   ni appel LLM (E3). Lancé depuis Godot par le bridge.
 

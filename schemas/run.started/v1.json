@@ -167,6 +167,50 @@
           "domicile"
         ]
       }
+    },
+    "etiquette": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Étiquette libre donnée au lancement (--etiquette) pour regrouper les runs d'une même série à comparer (ex. reference, s1-regle). Absente dans les runs antérieurs."
+    },
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modifie": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "empreinte": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "commit",
+        "modifie",
+        "empreinte"
+      ],
+      "description": "Version du code : commit git, modifications non enregistrées dans engine, llm, rag ou configs, empreinte du code des agents (engine/config.py, version_code). Absent dans les runs antérieurs."
+    },
+    "systeme1": {
+      "enum": [
+        "aucun",
+        "regle",
+        "nli",
+        "appris"
+      ],
+      "description": "Moteur du Système 1 des déposants LLM (aucun : chaque réflexion va au LLM). Absent dans les runs antérieurs."
     }
   },
   "required": [

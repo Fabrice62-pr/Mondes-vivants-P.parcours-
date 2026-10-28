@@ -6,7 +6,9 @@
     python -m services.archiveur --sql requetes/modele_unique.sql
     python -m services.archiveur --requete "SELECT config, count(*) FROM runs GROUP BY config"
 
-Chaque run terminé a son dossier data/runs/<run_id>/ ; l'archiveur y ajoute archive/<table>.parquet.
+Chaque run terminé a son dossier data/runs/<run_id>/ ; l'archiveur y ajoute archive/<table>.parquet. Un run
+interrompu (sans resume.json, inactif depuis 10 min) est d'abord résumé par services/reconstitution.py, puis
+archivé avec runs.interrompu = true.
 La base data/archive.duckdb ne contient que des **vues** sur ces fichiers : elle se reconstruit à tout
 moment, et une requête rejouée sur les mêmes runs donne le même résultat (F5).
 
@@ -45,7 +47,8 @@ TABLES = {
     "evenements": (None, ["event_id", "type", "producer AS producteur", "t_emit", "causes", "payload"]),
     "decisions": ("decision.made", ["event_id", _t("agent_id"), _t("type"), _t("action"), _t("regle_id"),
                                     _t("justification"), _t("t_sim_contexte", "INTEGER"), _t("call_id"),
-                                    _t("souvenirs", "LISTE"), _t("documents", "JSON"), _t("voie"), "causes"]),
+                                    _t("souvenirs", "LISTE"), _t("documents", "JSON"), _t("voie"),
+                                    _t("systeme1", "JSON"), "causes"]),
     "llm_appels": ("llm.called", [_t("call_id"), _t("agent_id"), _t("usage"), _t("fournisseur"), _t("modele"),
                                   _t("tier"), _t("tokens_entree", "INTEGER"), _t("tokens_sortie", "INTEGER"),
                                   _t("latence_ms", "INTEGER"), _t("statut"), _t("essai", "INTEGER")]),
@@ -100,13 +103,34 @@ def archiver_run(dossier: Path, con=None) -> bool:
     return True
 
 
+# Latence des appels LLM et retard d'application des décisions LLM, mesurés sur l'historique du run.
+# json_extract_string plutôt que ->> : combiné à une soustraction, ->> est mal analysé par DuckDB.
+MESURES = """
+WITH llm AS (SELECT TRY_CAST(json_extract_string(payload, '$.latence_ms') AS INTEGER) AS latence
+             FROM ev WHERE type = 'llm.called'),
+     dec AS (SELECT t_sim - TRY_CAST(json_extract_string(payload, '$.t_sim_contexte') AS INTEGER) AS retard,
+                    json_extract_string(payload, '$.voie') AS voie
+             FROM ev WHERE type = 'decision.made' AND json_extract_string(payload, '$.type') = 'llm')
+SELECT (SELECT median(latence) FROM llm) AS latence_mediane_ms,
+       (SELECT quantile_cont(latence, 0.95) FROM llm) AS latence_p95_ms,
+       (SELECT count(*) FROM dec WHERE voie = 'en_retard') AS decisions_en_retard,
+       (SELECT avg(retard) FROM dec) AS retard_moyen_min,
+       (SELECT max(retard) FROM dec) AS retard_max_min
+"""
+
+
 def _ecrire_run(con, dossier: Path, sortie: Path) -> None:
     r = json.loads((dossier / "resume.json").read_text(encoding="utf-8"))
     cfg_f = dossier / "config.json"
     cfg = json.loads(cfg_f.read_text(encoding="utf-8")) if cfg_f.exists() else {}
     llm, rag = r.get("llm") or {}, r.get("rag") or {}
+    s1 = llm.get("systeme1") or {}
+    mesures = dict(zip(("latence_mediane_ms", "latence_p95_ms", "decisions_en_retard", "retard_moyen_min",
+                        "retard_max_min"), con.execute(MESURES).fetchone()))
     ligne = {
-        "run_id": dossier.name, "config": cfg.get("nom"), "graine": r.get("graine"), "mode": cfg.get("mode"),
+        "run_id": dossier.name, "config": cfg.get("nom") or r.get("config_nom"), "graine": r.get("graine"),
+        "mode": cfg.get("mode") or r.get("mode"), "etiquette": r.get("etiquette"),
+        "interrompu": bool(r.get("interrompu")),
         "deposants": cfg.get("population", {}).get("deposants"), "llm_actif": bool(cfg.get("llm", {}).get("actif")),
         "rag_actif": bool(cfg.get("rag", {}).get("actif")) and bool(cfg.get("llm", {}).get("actif")),
         **{k: r.get(k) for k in ("fin", "t_fin", "defaut", "t_defaut", "solvable", "part_retiree", "file_max",
@@ -114,13 +138,38 @@ def _ecrire_run(con, dossier: Path, sortie: Path) -> None:
                                  "evenements", "rejets_dlq", "duree_reelle_s")},
         "appels_llm": llm.get("appels", 0), "tokens_entree": llm.get("tokens_entree", 0),
         "tokens_sortie": llm.get("tokens_sortie", 0), "replis": llm.get("replis", 0),
+        "decisions_llm": llm.get("decisions_llm", 0),
         "souvenirs": rag.get("souvenirs", 0), "violations_c6": rag.get("violations_c6", 0),
+        "systeme1": s1.get("moteur") or (cfg.get("systeme1", {}).get("moteur") if llm else None) or "aucun",
+        "s1_evaluations": s1.get("evaluations"), "s1_decide_seul": s1.get("decide_seul"),
+        "s1_escalades_retrait": (s1.get("escalades") or {}).get("retrait"),
+        "s1_escalades_ambigu": (s1.get("escalades") or {}).get("ambigu"),
+        "s1_reportees": s1.get("reportees"),
+        "s1_retraits_confirmes": (s1.get("verdicts_llm") or {}).get("retrait_confirme"),
+        "s1_retraits_infirmes": (s1.get("verdicts_llm") or {}).get("retrait_infirme"),
+        **mesures,
     }
     tmp = sortie / "_run.json"
     tmp.write_text(json.dumps(ligne, ensure_ascii=False), encoding="utf-8")
-    con.execute(f"COPY (SELECT * FROM read_json('{tmp.as_posix()}')) TO '{(sortie / 'runs.parquet').as_posix()}' "
-                f"(FORMAT parquet)")
+    # Types fixés : une colonne vide dans un run (pas de défaut, pas de LLM) serait lue comme JSON, et la vue
+    # sur tous les runs ne pourrait plus en faire la moyenne.
+    colonnes = ", ".join(f"TRY_CAST({k} AS {TYPES_RUNS.get(k, 'VARCHAR')}) AS {k}" for k in ligne)
+    con.execute(f"COPY (SELECT {colonnes} FROM read_json('{tmp.as_posix()}')) "
+                f"TO '{(sortie / 'runs.parquet').as_posix()}' (FORMAT parquet)")
     tmp.unlink()
+
+
+TYPES_RUNS = {
+    **{k: "BOOLEAN" for k in ("interrompu", "llm_actif", "rag_actif", "defaut", "solvable", "emergence")},
+    **{k: "DOUBLE" for k in ("part_retiree", "icc_max", "duree_reelle_s", "latence_mediane_ms", "latence_p95_ms",
+                             "retard_moyen_min")},
+    **{k: "BIGINT" for k in ("graine", "deposants", "t_fin", "t_defaut", "file_max", "t_emergence", "conversations",
+                             "communiques", "evenements", "rejets_dlq", "appels_llm", "tokens_entree",
+                             "tokens_sortie", "replis", "decisions_llm", "souvenirs", "violations_c6",
+                             "s1_evaluations", "s1_decide_seul", "s1_escalades_retrait", "s1_escalades_ambigu",
+                             "s1_reportees", "s1_retraits_confirmes", "s1_retraits_infirmes",
+                             "decisions_en_retard", "retard_max_min")},
+}
 
 
 def ouvrir(base: Path = BASE, runs: Path = RUNS):
@@ -135,7 +184,10 @@ def ouvrir(base: Path = BASE, runs: Path = RUNS):
 
 
 def archiver_tout(runs: Path = RUNS, forcer: bool = False) -> list[str]:
+    """Archive les runs terminés, et d'abord les runs interrompus, dont on reconstitue le résumé."""
     import duckdb
+    from services.reconstitution import reconstituer_tout
+    reconstituer_tout(runs)
     con = duckdb.connect()
     faits = []
     for d in sorted(p for p in runs.iterdir() if p.is_dir()):

@@ -66,6 +66,17 @@ def test_lancer_annonce_a_tous_les_clients(client):
     assert "--sans-llm" in args
 
 
+def test_lancer_avec_systeme1_et_etiquette(client):
+    c, b = client
+    assert c.post("/runs", json={"systeme1": "nli", "etiquette": "s1-nli"}).json()["etat"] == "lance"
+    args = b.lances[-1]
+    for attendu in (["--systeme1", "nli"], ["--etiquette", "s1-nli"]):
+        i = args.index(attendu[0])
+        assert args[i:i + 2] == attendu
+    assert c.post("/runs", json={"systeme1": "magie"}).status_code == 422
+    assert c.post("/runs", json={"etiquette": "a b/c"}).status_code == 422      # pas d'espace ni de « / »
+
+
 def test_commande_conforme_ou_dlq(client):
     c, b = client
     with c.websocket_connect("/ws") as ws:

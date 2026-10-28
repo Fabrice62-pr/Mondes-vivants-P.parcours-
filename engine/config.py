@@ -1,6 +1,8 @@
 """Chargement des configurations de run (YAML avec héritage) et des données partagées."""
 import hashlib
 import json
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -49,6 +51,29 @@ def empreinte(cfg: dict) -> str:
     """Empreinte stable d'une configuration, publiée dans run.started (rejouabilité, E3)."""
     brut = json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(brut.encode("utf-8")).hexdigest()[:16]
+
+
+@lru_cache(maxsize=1)                                # le code ne change pas pendant un processus
+def version_code() -> dict:
+    """Version du code qui a produit un run (run.started.code) : le commit git, s'il reste des
+    modifications non enregistrées, et une empreinte du code des agents (engine, llm, rag). Deux runs de même
+    empreinte ont tourné avec les mêmes prompts et les mêmes règles, même entre deux commits."""
+    h = hashlib.sha256()
+    for f in sorted(p for d in ("engine", "llm", "rag") for p in (ROOT / d).glob("*.py")):
+        h.update(f.relative_to(ROOT).as_posix().encode("utf-8"))
+        h.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    commit = modifie = None
+    try:
+        sortie = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+                                timeout=5)
+        if sortie.returncode == 0:
+            commit = sortie.stdout.strip()
+            etat = subprocess.run(["git", "status", "--porcelain", "--", "engine", "llm", "rag", "configs"],
+                                  cwd=ROOT, capture_output=True, text=True, timeout=5)
+            modifie = bool(etat.stdout.strip()) if etat.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {"commit": commit, "modifie": modifie, "empreinte": h.hexdigest()[:16]}
 
 
 def charger_modeles() -> dict:

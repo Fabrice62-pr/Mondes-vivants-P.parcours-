@@ -125,6 +125,20 @@ llm:
   intervalle_decision_min: 60
   seuil_reflexion: 0.10
 
+# Système 1 des déposants LLM (engine/systeme1.py) : quand un déposant LLM a du nouveau, un jugement
+# rapide et local décide d'abord, sans appel API. Il ne confie au LLM (Système 2) qu'un retrait, toujours
+# vérifié, ou une situation ambiguë. intervalle_decision_min ne limite alors que les appels au LLM.
+systeme1:
+  moteur: aucun                 # aucun | regle | nli | appris ; remplacé au lancement par --systeme1
+                                # aucun par défaut : regle supprime la panique, nli et appris restent à
+                                # valider (docs/hypotheses.md, résultats H8)
+  confiance_min: 0.85           # en dessous, le LLM tranche (confiance = probabilité de la réponse choisie, 0,5 à 1)
+  marge: 0.10                   # regle : écart pression - seuil qui donne une confiance de 1 (0,85 à 0,07 du seuil)
+  modele_nli: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7   # nli : ~280 M de paramètres, français
+  notes_nli: 5                  # nli : dernières notes du carnet lues par le modèle
+  modele_appris: data/modeles/systeme1-appris   # appris : tools/systeme1_apprentissage.py ; son seuil est dans
+                                                # meta.json (décidé seul si p < seuil_recommande)
+
 # Mémoire des agents LLM et RAG (semaine 6). Plongements calculés en local (GPU si disponible).
 rag:
   actif: true

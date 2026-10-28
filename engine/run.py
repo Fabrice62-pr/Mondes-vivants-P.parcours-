@@ -8,6 +8,11 @@
 --rythme   : secondes réelles par pas simulé (0 = aussi vite que possible ; utile pour regarder dans Godot).
 --deposants, --jours, --mode : remplacent la configuration au lancement (C2), sans modifier de code.
 --sans-llm : tous les agents décident par règles (aucun appel, aucun quota consommé).
+--systeme1 : moteur du Système 1 des déposants LLM (aucun, regle, nli), à la place de la configuration.
+--etiquette : nom de la série de runs à comparer (ex. reference, s1-regle), reporté dans l'archive.
+
+    python -m engine.run --mode hybride --graines 1-3 --systeme1 aucun --etiquette reference
+    python -m engine.run --mode hybride --graines 1-3 --systeme1 regle --etiquette s1-regle
 """
 import argparse
 import json
@@ -20,6 +25,7 @@ from datetime import datetime
 from .config import ROOT, charger_config
 from .evenements import PuitsJsonl, PuitsKafka, PuitsMemoire
 from .moteur import Simulation
+from .systeme1 import MOTEURS
 
 
 def charger_env() -> None:
@@ -43,7 +49,8 @@ def graines(texte: str) -> list[int]:
     return out
 
 
-def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valider: bool = True) -> dict:
+def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valider: bool = True,
+             etiquette: str | None = None) -> dict:
     run_id = f"{cfg['nom']}-g{graine}-{datetime.now():%Y%m%d-%H%M%S}"
     puits, dossier = [], None
     if "kafka" in puits_noms:
@@ -51,9 +58,11 @@ def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valid
     if "jsonl" in puits_noms:
         dossier = ROOT / "data" / "runs" / run_id
         puits.append(PuitsJsonl(dossier))
+        # Dès le départ : un run interrompu garde sa configuration (services/reconstitution.py).
+        (dossier / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     if "memoire" in puits_noms or not puits:
         puits.append(PuitsMemoire())
-    sim = Simulation(cfg, graine, puits, run_id, valider)
+    sim = Simulation(cfg, graine, puits, run_id, valider, etiquette=etiquette)
     if sim.echeance is not None and rythme <= 0:
         # En hybride et en asynchrone, l'horloge simulée avance en temps réel : sans rythme, les réponses
         # en retard arriveraient des jours simulés plus tard.
@@ -72,7 +81,6 @@ def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valid
     r.update({"run_id": run_id, "graine": graine, "duree_reelle_s": round(time.perf_counter() - t0, 2)})
     if dossier is not None:
         (dossier / "resume.json").write_text(json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
-        (dossier / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         try:                                       # archive Parquet du run (F5) ; un échec n'invalide pas le run
             from services.archiveur import archiver_run
             archiver_run(dossier)
@@ -84,9 +92,14 @@ def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valid
 def ligne(r: dict) -> str:
     d = f"défaut {r['defaut_libelle']} ({'solvable' if r['solvable'] else 'insolvable'})" if r["defaut"] else "pas de défaut"
     e = "oui" if r["emergence"] else "non"
+    llm = r.get("llm") or {}
+    s1 = llm.get("systeme1")
+    cout = f" | {llm.get('appels', 0)} appels LLM" if llm else ""
+    if s1:
+        cout += f" | Système 1 seul {s1['decide_seul']}/{s1['evaluations']}"
     return (f"graine {r['graine']:>3} | {d:<44} | retiré {r['part_retiree']:6.1%} | file max {r['file_max']:>3} | "
             f"ICC max {r['icc_max']:.2f} | émergence {e:<3} | {r['evenements']:>6} évts | DLQ {r['rejets_dlq']} | "
-            f"{r['duree_reelle_s']:.1f} s")
+            f"{r['duree_reelle_s']:.1f} s{cout}")
 
 
 def main(argv=None) -> int:
@@ -102,6 +115,8 @@ def main(argv=None) -> int:
     ap.add_argument("--rythme", type=float, default=0.0)
     ap.add_argument("--sans-validation", action="store_true", help="déconseillé : désactive le contrôle F4")
     ap.add_argument("--sans-llm", action="store_true", help="tous les agents décident par règles")
+    ap.add_argument("--systeme1", choices=list(MOTEURS), help="moteur du Système 1 des déposants LLM")
+    ap.add_argument("--etiquette", help="nom de la série de runs à comparer (ex. reference, s1-regle)")
     a = ap.parse_args(argv)
 
     charger_env()
@@ -116,15 +131,18 @@ def main(argv=None) -> int:
         cfg.setdefault("hybride", {})["echeance_s"] = a.echeance
     if a.sans_llm:
         cfg["llm"]["actif"] = False
+    if a.systeme1:
+        cfg.setdefault("systeme1", {})["moteur"] = a.systeme1
     liste = graines(a.graines) if a.graines else [cfg["graine"]]
     puits = [p.strip() for p in a.puits.split(",") if p.strip()]
 
     print(f"Configuration « {cfg['nom']} » : {cfg['population']['deposants']} déposants + personnages principaux, "
           f"{cfg['horloge']['duree_jours']} jours, mode {cfg['mode']}, LLM {'actifs' if cfg['llm']['actif'] else 'inactifs'}, "
-          f"puits {','.join(puits)}")
+          f"Système 1 {cfg.get('systeme1', {}).get('moteur', 'aucun')}, puits {','.join(puits)}"
+          + (f", étiquette « {a.etiquette} »" if a.etiquette else ""))
     resultats = []
     for g in liste:
-        r = executer(cfg, g, puits, a.rythme, not a.sans_validation)
+        r = executer(cfg, g, puits, a.rythme, not a.sans_validation, a.etiquette)
         resultats.append(r)
         print(ligne(r))
     if len(resultats) > 1:

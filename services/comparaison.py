@@ -1,7 +1,8 @@
 """Résumés des runs passés, pour l'écran de comparaison de Godot.
 
 Chaque run terminé a un dossier data/runs/<run_id>/ avec resume.json, config.json et events.jsonl.
-Un run arrêté avant la fin n'a pas de resume.json : il est ignoré.
+Un run arrêté avant la fin n'a pas de resume.json tant que services/reconstitution.py ne l'a pas résumé
+(fait par le bridge à l'arrêt du moteur) ; il apparaît alors avec interrompu = true.
 """
 import json
 from pathlib import Path
@@ -38,7 +39,7 @@ def resume_run(dossier: Path) -> dict | None:
     ev = dossier / "events.jsonl"
     out = {
         "run_id": dossier.name,
-        "config": cfg.get("nom", dossier.name.split("-g")[0]),
+        "config": cfg.get("nom") or r.get("config_nom") or dossier.name.split("-g")[0],
         "graine": r.get("graine"),
         "deposants": cfg.get("population", {}).get("deposants"),
         "duree_jours": cfg.get("horloge", {}).get("duree_jours", 7),
@@ -54,8 +55,12 @@ def resume_run(dossier: Path) -> dict | None:
         "perte_totale": r.get("perte_totale"),
         "communiques": r.get("communiques"),
         "fin": r.get("fin"),
-        "mode": cfg.get("mode", "synchrone"),
+        "interrompu": bool(r.get("interrompu")),
+        "etiquette": r.get("etiquette"),
+        "mode": cfg.get("mode") or r.get("mode") or "synchrone",
         "llm": bool(cfg.get("llm", {}).get("actif")),
+        "systeme1": ((r.get("llm") or {}).get("systeme1") or {}).get("moteur", "aucun"),
+        "appels_llm": (r.get("llm") or {}).get("appels", 0),
         "rejouable": (dossier / "etats.jsonl").exists(),
         "icc": courbe_icc(ev) if ev.exists() else [],
     }

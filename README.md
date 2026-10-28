@@ -8,7 +8,7 @@ Simulation multi-agents d'un bank run dans la vallée fictive de Brévanne. Une 
 | Dossier | Contenu |
 |---|---|
 | `guichet/` | Projet Godot 4.7, la **vue** : scène 3D, HUD, inspection d'agent, leviers (voir `guichet/README.md`) |
-| `services/` | `bridge.py` : bridge FastAPI entre Godot (WebSocket `/ws`) et Kafka, routes REST et Swagger sur `/docs`, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `comparaison.py` : résumés des runs pour Godot |
+| `services/` | `bridge.py` : bridge FastAPI entre Godot (WebSocket `/ws`) et Kafka, routes REST et Swagger sur `/docs`, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `reconstitution.py` : résumé des runs interrompus. `comparaison.py` : résumés des runs pour Godot |
 | `requetes/` | Requêtes SQL reproductibles sur l'historique des runs (scénarios, coût, décisions, mémoire, sources de l'ICC, modèle unique par agent) |
 | `lancer.bat`, `arreter.bat` | Démarrage en un double-clic (Kafka, bridge, Godot) et arrêt |
 | `archives/` | Maquette Godot d'origine, où la simulation tournait dans Godot |
@@ -19,7 +19,7 @@ Simulation multi-agents d'un bank run dans la vallée fictive de Brévanne. Une 
 | `docs/journal/` | Compte rendu détaillé de chaque semaine de travail |
 | `docs/README_api_key.md` | Clés API, fournisseurs, modèles, quotas, problèmes rencontrés et dépannage |
 | `tools/` | Vérification des contrats et des clés API |
-| `engine/` | Moteur de simulation : horloge, monde, Caisse, files, agents à règles, publication Kafka |
+| `engine/` | Moteur de simulation : horloge, monde, Caisse, files, agents à règles, Système 1 des déposants LLM (`systeme1.py`), publication Kafka |
 | `tests/` | Tests automatiques (`pytest`) |
 | `llm/` | Passerelle LLM : fournisseurs gratuits, limites de débit, prompts et validation des réponses |
 | `rag/` | Mémoire des agents et RAG : corpus de la vallée, plongements locaux, PostgreSQL + pgvector (`schema.sql`) |
@@ -70,6 +70,13 @@ copy .env.example .env
 # hybride (il les attend au plus --echeance secondes ; les réponses en retard s'appliquent à leur arrivée)
 .venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode asynchrone
 .venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode hybride --echeance 3
+
+# Système 1 (engine/systeme1.py) : aucun (défaut), regle, nli (mDeBERTa local, ~1 Go téléchargé une fois) ou
+# appris (classifieur entraîné par tools\systeme1_apprentissage.py). Résultats : docs\hypotheses.md (H8)
+# --etiquette nomme la série, pour la comparer ensuite (requetes\etiquettes.sql)
+.venv\Scripts\python -m engine.run --mode hybride --graines 1-3 --systeme1 aucun --etiquette reference
+.venv\Scripts\python -m engine.run --mode hybride --graines 1-3 --systeme1 regle --etiquette s1-regle
+.venv\Scripts\python -m engine.run --mode hybride --graines 1-3 --systeme1 nli --etiquette s1-nli
 ```
 
 ## Rejouer et interroger l'historique
@@ -83,6 +90,13 @@ copy .env.example .env
 # Historique de tous les runs en SQL (F5) : chaque run est archivé en Parquet à sa fin
 .venv\Scripts\python -m services.archiveur --sql requetes\scenarios.sql
 .venv\Scripts\python -m services.archiveur --requete "SELECT config, count(*) FROM runs GROUP BY config"
+
+# Comparer les séries par étiquette : latence, appels, part décidée par le Système 1, issue des runs
+.venv\Scripts\python -m services.archiveur --sql requetes\etiquettes.sql
+
+# Les runs interrompus (arrêtés depuis Godot, plantés) sont résumés depuis leur historique et archivés
+# avec interrompu = true : par le bridge à l'arrêt du moteur, ou ici pour les anciens
+.venv\Scripts\python -m services.reconstitution
 ```
 
 Les agents LLM sont actifs par défaut (`llm.actif` dans `configs/principal.yaml`). Un run complet de

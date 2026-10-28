@@ -23,6 +23,10 @@ _doit_reflechir) ; les requêtes d'un pas partent en un lot. L'employé d'agence
 la direction décide des communiqués. En cas d'échec, l'agent décide avec sa règle
 (decision.made.type = repli_regles) et un incident est publié.
 
+Système 1 (systeme1.moteur, engine/systeme1.py) : quand un déposant LLM a du nouveau, un jugement rapide et
+local décide d'abord. Il ne confie au LLM (Système 2) qu'un retrait, toujours vérifié, ou une situation
+ambiguë ; le reste est décidé sans appel (decision.made.type = systeme1). Voir _systeme1.
+
 Mémoire (rag.actif) : chaque chose qu'un agent LLM apprend devient un souvenir (memory.written). Avant de
 décider, il se rappelle ses souvenirs les plus utiles, datés d'avant la décision, et les documents du
 corpus de la vallée les plus proches ; decision.made les cite (A1, F1). Un élément du futur ou jamais
@@ -42,12 +46,13 @@ from .caisse import Caisse
 from llm import prompts
 from llm.passerelle import Passerelle, Requete
 
-from .config import ROOT, charger_modeles, charger_monde, echeance, empreinte
+from .config import ROOT, charger_modeles, charger_monde, echeance, empreinte, version_code
 from .evenements import Bus, Fabrique, PuitsMemoire, Validateur
 from .horloge import Horloge, minutes
-from .indicateurs import icc
+from .indicateurs import icc, instant_emergence
 from .monde import Monde
 from .population import attribution, construire
+from .systeme1 import creer as creer_systeme1
 
 PARAMETRES_REQUIS = {"garantie": [], "plafond_retrait": ["valeur"], "fermer_agence": ["agence_id"],
                      "rouvrir_agence": ["agence_id"], "consigne_employe": ["consigne"],
@@ -80,7 +85,7 @@ class Echange:
 class Simulation:
     def __init__(self, cfg: dict, graine: int | None = None, puits: list | None = None,
                  run_id: str | None = None, valider: bool = True, passerelle: Passerelle | None = None,
-                 memoire=None):
+                 memoire=None, systeme1=None, etiquette: str | None = None):
         self.echeance = echeance(cfg)
         self._limite_pas = 0.0                       # instant réel (time.monotonic) où l'attente du pas s'arrête
         self.cfg = cfg
@@ -116,6 +121,15 @@ class Simulation:
                 memoire = Memoire(Plongement(cfg["rag"].get("modele_plongement", "intfloat/multilingual-e5-small")),
                                   self.run_id, cfg=cfg["rag"])   # PostgreSQL : POSTGRES_URL (.env)
             self.memoire = memoire
+        # Système 1 : sans déposant LLM, il n'a rien à aiguiller.
+        self.S1 = cfg.get("systeme1") or {}
+        self.s1 = None
+        if self.llm is not None and any(a.type == "llm" for a in self.deposants):
+            self.s1 = systeme1 if systeme1 is not None else creer_systeme1(self.S1)
+        self.s1_stats = {"evaluations": 0, "decide_seul": 0, "escalades": {"retrait": 0, "ambigu": 0},
+                         "reportees": 0, "verdicts_llm": {"retrait_confirme": 0, "retrait_infirme": 0,
+                                                          "ambigu_retirer": 0, "ambigu_non": 0}}
+        self.etiquette = etiquette
         self._docs_publies: dict[str, int] = {}      # doc_id (article, communiqué) -> t_sim de publication
         self._doc_article: str | None = None
         self.n_rappels = 0
@@ -195,21 +209,25 @@ class Simulation:
 
     def _decision(self, agent, action: str, regle: str | None, justification: str, causes=(),
                   call_id: str | None = None, t_contexte: int | None = None, rappel=None,
-                  voie: str | None = None) -> str:
+                  voie: str | None = None, avis=None) -> str:
         """regle None = décision du LLM (call_id et voie renseignés) ; sinon une règle, qui pour un agent LLM
-        est un repli."""
+        est un repli, ou le Système 1 (avis renseigné). Une décision du LLM porte l'avis du Système 1 qui l'a
+        appelé, s'il y en a un."""
         agent.intention, agent.regle, agent.justification = action, regle, justification
         if regle is None:
             type_ = "llm"
             self.decisions_llm += 1
             self.voies[voie] += 1
+        elif avis is not None:
+            type_ = "systeme1"
         else:
             type_ = "regles" if agent.type == "regles" else "repli_regles"
         return self._emettre("decision.made", {
             "agent_id": agent.id, "type": type_, "action": action, "justification": justification,
             "regle_id": regle, "t_sim_contexte": self.t if t_contexte is None else t_contexte,
             "documents": self._documents_cites(rappel), "souvenirs": [s.memoire_id for s in rappel[0]] if rappel else [],
-            "call_id": call_id, "voie": voie if regle is None else None}, causes)
+            "call_id": call_id, "voie": voie if regle is None else None,
+            "systeme1": avis.charge(self.s1.nom) if avis is not None else None}, causes)
 
     # ---------------------------------------------------------------- LLM
 
@@ -321,6 +339,8 @@ class Simulation:
         self._emettre("run.started", {
             "graine": self.graine, "mode": self.cfg["mode"], "echeance_s": self.echeance, "config_nom": self.cfg["nom"],
             "config_hash": empreinte(self.cfg), "population": len(self.deposants),
+            "etiquette": self.etiquette, "code": version_code(),
+            "systeme1": self.s1.nom if self.s1 is not None else "aucun",
             "horloge": {"pas_min": h["pas_min"], "debut_jour": h["debut"]["jour"],
                         "duree_jours": h["duree_jours"], "t_sim_article": self.t_article},
             "attribution": attribution(self.deposants, self.employe, self.direction, self.monde)})
@@ -348,13 +368,9 @@ class Simulation:
 
     def resume(self) -> dict:
         valeurs = [v["icc"] for _, v in self.serie_icc]
-        seuil, duree = 0.6, max(1, 240 // self.horloge.pas)   # critère : ICC >= 0,6 pendant 4 h
-        serie, t_emergence = 0, None
-        for t, v in self.serie_icc:
-            serie = serie + 1 if v["icc"] >= seuil else 0
-            if serie >= duree and t_emergence is None:
-                t_emergence = t - (duree - 1) * self.horloge.pas
+        t_emergence = instant_emergence([(t, v["icc"]) for t, v in self.serie_icc], self.horloge.pas)
         return {
+            "etiquette": self.etiquette, "interrompu": False,
             "fin": self.horloge.libelle(self.t), "t_fin": self.t,
             "defaut": self.t_defaut is not None, "t_defaut": self.t_defaut,
             "defaut_libelle": self.horloge.libelle(self.t_defaut) if self.t_defaut is not None else None,
@@ -371,7 +387,11 @@ class Simulation:
             "rejets_dlq": self.bus.rejets,
             "llm": None if self.llm is None else {**self.llm.bilan(), "decisions_llm": self.decisions_llm,
                                                   "voies": dict(self.voies), "replis": self.replis,
-                                                  "incidents": self.incidents},
+                                                  "incidents": self.incidents,
+                                                  "systeme1": None if self.s1 is None else {
+                                                      "moteur": self.s1.nom,
+                                                      "confiance_min": round(self._confiance_min(), 4),
+                                                      **self.s1_stats}},
             "rag": None if self.memoire is None else {"souvenirs": self.bus.compteur["memory.written"],
                                                       "rappels": self.n_rappels, "violations_c6": self.violations},
         }
@@ -647,6 +667,8 @@ class Simulation:
                     reflexions.append(a)
                 continue                             # entre deux réflexions, il garde sa dernière décision
             self._decider_regle(a, ouvert)
+        if reflexions and self.s1 is not None:
+            reflexions = self._systeme1(reflexions, ouvert)
         if reflexions:
             self._decider_llm(reflexions, ouvert)
 
@@ -669,10 +691,10 @@ class Simulation:
 
     def _appliquer(self, a: Deposant, action: str, regle: str | None, just: str, ouvert: bool,
                    call_id: str | None = None, forcer: bool = False, rappel=None,
-                   t_contexte: int | None = None, voie: str | None = None) -> str | None:
+                   t_contexte: int | None = None, voie: str | None = None, avis=None) -> str | None:
         did = None
         if action != a.intention or forcer:
-            did = self._decision(a, action, regle, just, a.causes_ids, call_id, t_contexte, rappel, voie)
+            did = self._decision(a, action, regle, just, a.causes_ids, call_id, t_contexte, rappel, voie, avis)
         if action == "retirer":
             a.veut_retirer = True
             if ouvert:
@@ -684,11 +706,51 @@ class Simulation:
     def _doit_reflechir(self, a: Deposant) -> bool:
         if a.reflexion is not None:                  # sa réponse précédente n'est pas encore arrivée
             return False
-        if not self.horloge.eveille(self.t) or self.t - a.t_llm < self.L.get("intervalle_decision_min", 60):
+        if not self.horloge.eveille(self.t):
+            return False
+        # Avec le Système 1, l'intervalle ne limite que les appels au LLM (_systeme1) : le jugement rapide,
+        # lui, a lieu dès qu'il y a du nouveau.
+        if self.s1 is None and self.t - a.t_llm < self.L.get("intervalle_decision_min", 60):
             return False
         s = self.L.get("seuil_reflexion", 0.10)
         return (a.n_notes > a.n_notes_vues or abs(a.peur - a.peur_llm) >= s
                 or abs(a.estime_autres - a.estime_llm) >= s)
+
+    def _confiance_min(self) -> float:
+        """Le moteur appris porte son propre seuil, réglé à l'entraînement ; les autres suivent la config."""
+        return getattr(self.s1, "confiance_min", None) or self.S1.get("confiance_min", 0.85)
+
+    def _systeme1(self, agents: list[Deposant], ouvert: bool) -> list[Deposant]:
+        """Le Système 1 juge les agents qui ont du nouveau ; renvoie ceux qu'il confie au LLM (Système 2).
+
+        Un retrait est toujours vérifié par le LLM, une situation ambiguë (confiance < confiance_min) aussi.
+        Sinon le Système 1 décide seul. En attendant la réponse du LLM, l'agent garde sa décision actuelle.
+        Si le LLM a réfléchi depuis moins de intervalle_decision_min, l'escalade est reportée : l'agent sera
+        rejugé au pas suivant (son nouveau n'est pas marqué comme vu)."""
+        intervalle = self.L.get("intervalle_decision_min", 60)
+        confiance_min = self._confiance_min()
+        escalades = []
+        for a, avis in zip(agents, self.s1.evaluer(self, agents)):
+            self.s1_stats["evaluations"] += 1
+            if avis.action == "retirer":
+                avis.escalade = "retrait"
+            elif avis.confiance < confiance_min:
+                avis.escalade = "ambigu"
+            else:
+                self.s1_stats["decide_seul"] += 1
+                a.n_notes_vues, a.peur_llm, a.estime_llm = a.n_notes, a.peur, a.estime_autres
+                # « attendre » et « rien » ont le même effet : le Système 1 garde la nuance choisie par le LLM.
+                action = a.intention if a.intention in ("attendre", "rien") else avis.action
+                self._appliquer(a, action, self.s1.regle_id, f"Système 1 ({self.s1.nom}) : {avis.detail} ; "
+                                f"retrait jugé improbable (confiance {avis.confiance:.2f})", ouvert, avis=avis)
+                continue
+            if self.t - a.t_llm < intervalle:
+                self.s1_stats["reportees"] += 1
+                continue
+            self.s1_stats["escalades"][avis.escalade] += 1
+            a.avis_s1 = avis
+            escalades.append(a)
+        return escalades
 
     def _decider_llm(self, agents: list[Deposant], ouvert: bool) -> None:
         requetes, rappels = self._requetes_reflexion(agents)
@@ -713,6 +775,7 @@ class Simulation:
             res = future.result()
             if a.retire or a.veut_retirer or a.etat in (VERS_AGENCE, EN_FILE):
                 self._publier_appels(res)            # la situation a changé entre-temps : coût compté, rien d'autre
+                a.avis_s1 = None
                 continue
             self._appliquer_reflexion(a, rappel, res, ouvert, t0, "en_retard")
 
@@ -737,18 +800,31 @@ class Simulation:
 
     def _appliquer_reflexion(self, a: Deposant, rappel, res, ouvert: bool, t0: int, voie: str) -> None:
         self._publier_appels(res)
+        avis, a.avis_s1 = a.avis_s1, None
         if not res.ok:
             self.replis += 1
             a.peur_llm, a.estime_llm = a.peur, a.estime_autres
-            self._decider_regle(a, ouvert, repli=res.incident["nature"])
+            if self.s1 is None:
+                self._decider_regle(a, ouvert, repli=res.incident["nature"])
+                return
+            # Le LLM est en panne : le Système 1 décide, retrait compris, comme le repli sur la règle sans lui.
+            avis = self.s1.evaluer(self, [a])[0]
+            self._appliquer(a, avis.action, self.s1.regle_id,
+                            f"repli sur le Système 1 ({self.s1.nom}) après un incident LLM "
+                            f"({res.incident['nature']}) : {avis.detail}", ouvert, forcer=True, avis=avis)
             return
         d = res.donnees
+        if avis is not None:
+            retire = d["action"] == "retirer"
+            cle = (("retrait_confirme" if retire else "retrait_infirme") if avis.escalade == "retrait"
+                   else ("ambigu_retirer" if retire else "ambigu_non"))
+            self.s1_stats["verdicts_llm"][cle] += 1
         # Les croyances d'un agent LLM sont celles qu'il déclare (docs/contexte_commun.md).
         a.modifier(d["peur"] - a.peur, d["estime_autres"] - a.estime_autres, "reflexion")
         a.peur_llm, a.estime_llm = a.peur, a.estime_autres
         a.phrase_llm, a.call_phrase = d["phrase"], res.requete.call_id
         did = self._appliquer(a, d["action"], None, d["justification"], ouvert, res.requete.call_id,
-                              forcer=True, rappel=rappel, t_contexte=t0, voie=voie)
+                              forcer=True, rappel=rappel, t_contexte=t0, voie=voie, avis=avis)
         self._verifier_c6(a, rappel, did, t0)
         if self.memoire is not None:                 # sa propre réflexion devient un souvenir
             self._souvenir(a, f"j'ai décidé {DECIDE[d['action']]} : {d['justification']}", "reflexion", 0.3, [did])

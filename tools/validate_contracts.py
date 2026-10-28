@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from engine.config import charger_config as load_config, echeance  # noqa: E402
+from engine.systeme1 import MOTEURS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"
@@ -94,8 +95,15 @@ def check_configs() -> None:
             echeance(cfg)
         except (ValueError, KeyError, TypeError) as e:
             errors.append(f"{name} : mode {cfg['mode']} mal configuré ({e})")
+        s1 = cfg.get("systeme1") or {}
+        if s1.get("moteur", "aucun") not in MOTEURS:
+            errors.append(f"{name} : systeme1.moteur inconnu ({s1.get('moteur')})")
+        if not 0.5 <= float(s1.get("confiance_min", 0.85)) <= 1.0:
+            errors.append(f"{name} : systeme1.confiance_min hors de [0,5 ; 1]")
+        if float(s1.get("marge", 0.10)) <= 0:
+            errors.append(f"{name} : systeme1.marge doit être positive")
         print(f"config {name} : {pop['deposants']} déposants, {pop['part_regles']:.0%} à règles, "
-              f"{len(cfg['personnages_principaux'])} personnages principaux")
+              f"{len(cfg['personnages_principaux'])} personnages principaux, Système 1 {s1.get('moteur', 'aucun')}")
 
 
 if __name__ == "__main__":

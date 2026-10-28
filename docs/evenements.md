@@ -84,4 +84,11 @@ run au lieu d'environ 90 000 (143 agents × 640 pas).
 la rumeur s'éteint, environ 2 000 quand un défaut arrête le run le vendredi matin. Les déplacements
 (`agent.moved`) représentent environ la moitié du volume.
 
+**Système 1** (ajouts compatibles, version 1 conservée) : `decision.made.type` peut valoir `systeme1` (le
+jugement rapide a décidé sans LLM, `regle_id` = `S1-regle` ou `S1-nli`) et `decision.made.systeme1` donne
+son avis (probabilité de retrait, confiance, raison de l'escalade). Sur une décision `llm`, cet avis dit
+pourquoi le LLM a été appelé : `retrait` (toujours vérifié) ou `ambigu`. Une décision du Système 1 n'est
+publiée que si l'intention de l'agent change, comme pour un agent à règles ; leur nombre total est dans
+`resume.llm.systeme1`. `run.started` porte `etiquette`, `code` et `systeme1`.
+
 La description de chaque champ se trouve dans son schéma.

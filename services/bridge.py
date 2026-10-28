@@ -66,6 +66,20 @@ def maintenant() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def cloturer_runs(debut: float, fin: float) -> None:
+    """Après l'arrêt du moteur (bouton « Arrêter », fermeture, plantage) : le run lancé pendant [debut, fin]
+    n'a pas écrit son résumé ; on le reconstitue depuis son historique, puis on l'archive."""
+    from services.archiveur import archiver_run
+    from services.reconstitution import RUNS, a_reconstituer, reconstituer
+    try:
+        for d in a_reconstituer(RUNS, entre=(debut, fin)):
+            if reconstituer(d) is not None:
+                archiver_run(d)
+                print(f"[bridge] run interrompu résumé et archivé : {d.name}", flush=True)
+    except Exception as e:                                # n'empêche jamais le bridge de continuer
+        print(f"[bridge] résumé du run interrompu impossible : {e}", flush=True)
+
+
 def statut(etat: str, detail: str = "") -> dict:
     return {"type": "bridge.statut", "etat": etat, "detail": detail}
 
@@ -89,6 +103,9 @@ class Lancement(_Strict):
     llm: bool = True
     mode: Literal["synchrone", "asynchrone", "hybride"] | None = None
     echeance: float | None = Field(None, ge=0, le=600, description="mode hybride : attente maximale par pas (s)")
+    systeme1: Literal["aucun", "regle", "nli", "appris"] | None = Field(None, description="Système 1 des déposants LLM")
+    etiquette: str | None = Field(None, max_length=60, pattern=r"^[\w.-]+$",
+                                  description="série de runs à comparer (ex. reference, s1-regle)")
 
 
 class Rejeu(_Strict):
@@ -260,6 +277,10 @@ class Bridge:
             args += ["--mode", p.mode]
         if p.echeance is not None:
             args += ["--echeance", str(p.echeance)]
+        if p.systeme1 is not None:
+            args += ["--systeme1", p.systeme1]
+        if p.etiquette is not None:
+            args += ["--etiquette", p.etiquette]
         self._demarrer(args, "moteur")
         return self._annoncer("lance", p.config)
 
@@ -302,11 +323,13 @@ class Bridge:
         self.proc = subprocess.Popen(args, cwd=ROOT, stdout=sortie, stderr=subprocess.STDOUT,
                                      env={**os.environ, "PYTHONIOENCODING": "utf-8"}, creationflags=drapeaux)
         print(f"[bridge] {nom} lancé : {' '.join(args[2:])}", flush=True)
-        asyncio.create_task(self._surveiller(self.proc))
+        asyncio.create_task(self._surveiller(self.proc, nom, time.time()))
 
-    async def _surveiller(self, proc: subprocess.Popen) -> None:
+    async def _surveiller(self, proc: subprocess.Popen, nom: str, debut: float) -> None:
         while proc.poll() is None:
             await asyncio.sleep(0.5)
+        if nom == "moteur":
+            await asyncio.to_thread(cloturer_runs, debut, time.time())
         if proc is self.proc:
             self._annoncer("termine", f"code {proc.returncode}")
 

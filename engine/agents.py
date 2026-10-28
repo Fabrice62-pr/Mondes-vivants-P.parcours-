@@ -65,10 +65,11 @@ class Deposant:
     # agents LLM : carnet de ce que l'agent a appris (mémoire courte, daté), suivi des réflexions
     carnet: list = field(default_factory=list)      # [(t_sim, texte)], les 10 derniers
     n_notes: int = 0
-    n_notes_vues: int = 0         # nombre de notes au moment de la dernière réflexion
-    t_llm: int = -10 ** 9         # instant de la dernière réflexion
-    peur_llm: float = 0.0         # croyances déclarées lors de la dernière réflexion
+    n_notes_vues: int = 0         # nombre de notes au moment de la dernière décision (LLM ou Système 1)
+    t_llm: int = -10 ** 9         # instant de la dernière réflexion du LLM
+    peur_llm: float = 0.0         # croyances au moment de la dernière décision (LLM ou Système 1)
     estime_llm: float = 0.0
+    avis_s1: object = None        # avis du Système 1 qui a confié la décision en cours au LLM
     phrase_llm: str | None = None # ce que l'agent dit à ses voisins, tiré de sa dernière réflexion
     call_phrase: str | None = None
     vu_files: dict = field(default_factory=dict)    # agence -> longueur de file notée dans le carnet

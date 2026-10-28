@@ -13,7 +13,8 @@
       "enum": [
         "llm",
         "regles",
-        "repli_regles"
+        "repli_regles",
+        "systeme1"
       ]
     },
     "action": {
@@ -91,6 +92,46 @@
         null
       ],
       "description": "Décision LLM : appliquée dans le pas où la requête est partie (réponse arrivée avant l'échéance) ou en retard, à un pas suivant. null pour une décision par règle. Absent dans les runs antérieurs au mode hybride."
+    },
+    "systeme1": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "moteur": {
+          "enum": [
+            "regle",
+            "nli",
+            "appris"
+          ]
+        },
+        "p_retirer": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confiance": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1
+        },
+        "escalade": {
+          "enum": [
+            "retrait",
+            "ambigu",
+            null
+          ]
+        }
+      },
+      "required": [
+        "moteur",
+        "p_retirer",
+        "confiance",
+        "escalade"
+      ],
+      "description": "Avis du Système 1 (engine/systeme1.py). Sur une décision type = systeme1 : l'avis qui a décidé (escalade null), ou qui a pris le relais d'un LLM en panne. Sur une décision type = llm : l'avis qui a confié la décision au LLM, et pourquoi (retrait toujours vérifié, ou situation ambiguë). null sinon. Absent dans les runs antérieurs au Système 1."
     }
   },
   "required": [
@@ -135,6 +176,24 @@
       "documents": [],
       "souvenirs": [],
       "call_id": null
+    },
+    {
+      "agent_id": "dep_042",
+      "type": "systeme1",
+      "action": "attendre",
+      "justification": "Système 1 (regle) : pression 0.12, seuil 0.55 ; retrait jugé improbable (confiance 1.00)",
+      "regle_id": "S1-regle",
+      "t_sim_contexte": 3015,
+      "documents": [],
+      "souvenirs": [],
+      "call_id": null,
+      "voie": null,
+      "systeme1": {
+        "moteur": "regle",
+        "p_retirer": 0.0,
+        "confiance": 1.0,
+        "escalade": null
+      }
     }
   ]
 }

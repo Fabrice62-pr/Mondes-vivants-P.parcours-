@@ -9,6 +9,7 @@ const TRACE_TYPES := ["belief.updated", "conversation.held", "article.published"
 	"counter.exchanged", "command.issued"]
 
 var builder: WorldBuilder
+var sky: SkyCycle
 var camera_rig: CameraRig
 var hud: Hud
 var bridge: BridgeClient
@@ -29,11 +30,16 @@ var _agents_root: Node3D
 
 
 func _ready() -> void:
-	_setup_environment()
+	sky = SkyCycle.new()
+	sky.name = "Ciel"
+	add_child(sky)
 	builder = WorldBuilder.new()
 	builder.name = "Vallee"
 	add_child(builder)
 	builder.build()
+	AgentView.nav = builder.nav
+	sky.night_changed.connect(builder.set_night)
+	builder.set_night(sky.night)
 	for id in builder.agencies:
 		queues[id] = []
 	camera_rig = CameraRig.new()
@@ -53,28 +59,16 @@ func _ready() -> void:
 	bridge.connection_changed.connect(hud.on_connection)
 
 
-func _setup_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("cfdce3")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("e6edf0")
-	env.ambient_light_energy = 0.65
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.fog_enabled = true
-	env.fog_light_color = Color("cfdce3")
-	env.fog_density = 0.0011
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.name = "Soleil"
-	sun.light_color = Color("fff3e0")
-	sun.light_energy = 1.1
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 450.0
-	sun.rotation_degrees = Vector3(-55, -40, 0)
-	add_child(sun)
+func _process(_delta: float) -> void:
+	# Chemins des habitants : quelques millisecondes par image, pour ne pas saccader quand tout le
+	# village se met en route au même pas.
+	AgentView.tick_interval = tick_interval
+	AgentView.view_scale = clampf(camera_rig.dist / 100.0, 1.0, 1.6)
+	AgentView.process_pending(3.0)
+	AgentView.cam_pos = camera_rig.cam.global_position
+	AgentView.separate(agents.values())
+	# Ombres plus fines quand on zoome.
+	sky.sun.directional_shadow_max_distance = clampf(camera_rig.dist * 1.8, 120.0, 600.0)
 
 
 # ---------------------------------------------------------------- envoi vers le moteur
@@ -186,6 +180,7 @@ func _start_run(m: Dictionary) -> void:
 	for a in agents.values():
 		a.queue_free()
 	agents.clear()
+	AgentView.clear_pending()
 	for id in queues:
 		queues[id] = []
 	selected = null
@@ -204,7 +199,7 @@ func _start_run(m: Dictionary) -> void:
 		if row["role"] == "deposant":
 			hp = _assign_home(hp)
 		else:
-			hp = builder.places["bourg"] + Vector3(-4.0 if row["role"] == "employe" else -7.0, 0, -2.0)
+			hp = builder.nav.nearest_free(builder.places["bourg"] + Vector3(-4.0 if row["role"] == "employe" else -7.0, 0, -2.0))
 		a.setup(row, hp)
 		a.name = "Agent_" + str(row["agent_id"])
 		_agents_root.add_child(a)
@@ -229,7 +224,7 @@ func _print_summary() -> void:
 
 ## Maison proche du point tiré par le moteur, en évitant d'entasser tout le monde dans la même :
 ## chaque habitant déjà placé « éloigne » la maison de 25 m. Les colocataires se répartissent
-## autour de la porte.
+## devant la porte, côté rue.
 func _assign_home(p: Vector3) -> Vector3:
 	var best := -1
 	var best_score := INF
@@ -245,9 +240,10 @@ func _assign_home(p: Vector3) -> Vector3:
 	_home_use[best] = n + 1
 	var door: Vector3 = builder.homes[best]
 	if n == 0:
-		return door
-	var ang := n * 2.4   # angle d'or : les places ne se recouvrent pas
-	return door + Vector3(cos(ang), 0, sin(ang)) * (1.8 + 0.5 * floorf(n / 3.0))
+		return builder.nav.nearest_free(door)
+	var out: Vector3 = builder.home_dirs[best]
+	var spread := out.rotated(Vector3.UP, (n % 3 - 1) * 0.9 + (0.45 if n % 2 else 0.0))
+	return builder.nav.nearest_free(door + spread * (1.1 + 0.7 * floorf((n - 1) / 3.0)))
 
 
 func _on_tick(p: Dictionary) -> void:
@@ -255,6 +251,7 @@ func _on_tick(p: Dictionary) -> void:
 	if _last_tick > 0.0:
 		tick_interval = clampf(lerpf(tick_interval, now - _last_tick, 0.3), 0.03, 5.0)
 	_last_tick = now
+	sky.set_clock(int(p["jour"]), int(p["heure"]), int(p["minute"]), pas_min / 60.0 / tick_interval)
 	hud.on_clock(p)
 
 
@@ -271,7 +268,7 @@ func _spot(a: AgentView, lieu: String) -> Vector3:
 	var r := 2.5 + absf(a.offset.y) * 2.5
 	var x := c.x + cos(ang) * r
 	var z := c.z + sin(ang) * r
-	return Vector3(x, WorldData.height_world(x, z), z)
+	return builder.nav.nearest_free(Vector3(x, WorldData.height_world(x, z), z))
 
 
 func _on_moved(p: Dictionary, t: int) -> void:
@@ -283,9 +280,9 @@ func _on_moved(p: Dictionary, t: int) -> void:
 	if a.role != "deposant":
 		a.lieu = p["vers"]
 		var base: Vector3 = builder.places.get(p["vers"], a.home)
-		a.move_to(a.home if p["vers"] == "bourg" else base + Vector3(-2, 0, 1.5), duree)
+		a.move_to(a.home if p["vers"] == "bourg" else builder.nav.nearest_free(base + Vector3(-2, 0, 1.5)), duree)
 		return
-	a.move_to(_spot(a, p["vers"]), duree)
+	a.move_to(_spot(a, p["vers"]), duree, builder.agencies.has(p["vers"]))
 
 
 func _on_snapshot(p: Dictionary) -> void:
@@ -316,9 +313,24 @@ func _on_snapshot(p: Dictionary) -> void:
 		var spot := _spot(a, a.lieu)
 		if Vector2(spot.x - a.target.x, spot.z - a.target.z).length() > 0.5:
 			a.move_to(spot, tick_interval * 0.8)
+		_face_place(a)
 	hud.on_snapshot(p)
 	if selected:
 		hud.show_agent(selected)
+
+
+## Une fois sur place, on regarde où l'on va : le guichet (ou la personne devant soi) dans une
+## file, le centre du lieu ailleurs.
+func _face_place(a: AgentView) -> void:
+	if a.lieu == "domicile" or a.role != "deposant":
+		return
+	if builder.agencies.has(a.lieu):
+		var i: int = queues[a.lieu].find(a.agent_id)
+		if i >= 0:
+			a.face_toward((builder.agencies[a.lieu] as Agency).queue_look(i))
+		return
+	if builder.places.has(a.lieu):
+		a.face_toward(builder.places[a.lieu])
 
 
 func _on_conversation(p: Dictionary) -> void:
@@ -326,6 +338,9 @@ func _on_conversation(p: Dictionary) -> void:
 	var aud: AgentView = agents.get(p["auditeur_id"])
 	if loc == null or aud == null:
 		return
+	if loc.position.distance_to(aud.position) < 10.0:
+		loc.face_toward(aud.position)
+		aud.face_toward(loc.position)
 	var rep: String = p["reponse"] if p["reponse"] != null else ""
 	loc.say(p["phrase"])
 	aud.say(rep)

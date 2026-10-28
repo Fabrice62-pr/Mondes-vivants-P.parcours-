@@ -17,6 +17,13 @@ func queue_slot(i: int) -> Vector3:
 	return p
 
 
+## Ce que regarde la personne à la place i : la porte pour la première, sinon la personne devant elle.
+func queue_look(i: int) -> Vector3:
+	if i <= 0:
+		return global_position + Vector3(0.0, 0.0, 3.9)
+	return queue_slot(i - 1)
+
+
 func set_open(v: bool) -> void:
 	is_open = v
 	if _closed_label == null:
