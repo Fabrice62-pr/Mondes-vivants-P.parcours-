@@ -6,11 +6,9 @@ réelles** :
   - une réponse arrivée avant l'échéance s'applique dans ce pas (decision.made.voie = dans_le_pas) ;
   - une réponse en retard s'applique au pas où elle arrive, avec t_sim_contexte = l'instant où l'agent a
     commencé à réfléchir (voie = en_retard, C3). Un modèle rapide agit donc plus tôt qu'un modèle lent (H2).
-Les deux voies coexistent dans un même run ; c'est la latence réelle qui décide. Les deux autres modes sont
-des cas particuliers du même mécanisme :
-  - synchrone  : échéance infinie, le pas attend toutes les réponses (barrière) ;
-  - asynchrone : échéance nulle, le pas n'attend jamais ; chaque réponse s'applique à son arrivée.
-En hybride et en asynchrone, l'horloge avance au rythme réel choisi (engine/run.py).
+Les deux voies coexistent dans un même run ; c'est la latence réelle qui décide. C'est le seul mode
+d'exécution : il réunit la voie synchrone (dans le pas) et la voie asynchrone (en retard) qu'exige C4.
+L'horloge avance au rythme réel choisi (engine/run.py).
 
 Ordre d'un pas (15 minutes simulées) :
   commandes -> article -> tic d'horloge -> arrivées -> routine, employé, conversations
@@ -245,14 +243,9 @@ class Simulation:
             if res.incident["repli"] != "ignore":    # incident déjà signalé (clé absente, budget) : compté seulement
                 self._emettre("incident.raised", res.incident)
 
-    def _attendre(self, futures: list[Future]) -> bool:
-        """Attente bornée par l'échéance du pas. True : les réponses arrivées s'appliquent dans ce pas ;
-        False (asynchrone) : aucune ne s'applique dans le pas où elle est partie, même si elle est déjà là."""
-        if self.echeance == 0:
-            return False
-        reste = None if self.echeance is None else max(0.0, self._limite_pas - time.monotonic())
-        wait(futures, timeout=reste)
-        return True
+    def _attendre(self, futures: list[Future]) -> None:
+        """Attente bornée par l'échéance du pas : les réponses arrivées d'ici là s'appliquent dans ce pas."""
+        wait(futures, timeout=max(0.0, self._limite_pas - time.monotonic()))
 
     # ---------------------------------------------------------------- mémoire (A1, F1, C6)
 
@@ -337,7 +330,7 @@ class Simulation:
     def _demarrer(self) -> None:
         h = self.cfg["horloge"]
         self._emettre("run.started", {
-            "graine": self.graine, "mode": self.cfg["mode"], "echeance_s": self.echeance, "config_nom": self.cfg["nom"],
+            "graine": self.graine, "mode": "hybride", "echeance_s": self.echeance, "config_nom": self.cfg["nom"],
             "config_hash": empreinte(self.cfg), "population": len(self.deposants),
             "etiquette": self.etiquette, "code": version_code(),
             "systeme1": self.s1.nom if self.s1 is not None else "aucun",
@@ -370,7 +363,7 @@ class Simulation:
         valeurs = [v["icc"] for _, v in self.serie_icc]
         t_emergence = instant_emergence([(t, v["icc"]) for t, v in self.serie_icc], self.horloge.pas)
         return {
-            "etiquette": self.etiquette, "interrompu": False,
+            "etiquette": self.etiquette, "mode": "hybride", "echeance_s": self.echeance, "interrompu": False,
             "fin": self.horloge.libelle(self.t), "t_fin": self.t,
             "defaut": self.t_defaut is not None, "t_defaut": self.t_defaut,
             "defaut_libelle": self.horloge.libelle(self.t_defaut) if self.t_defaut is not None else None,
@@ -402,7 +395,7 @@ class Simulation:
         if self.fini:
             return
         t = self.t
-        self._limite_pas = time.monotonic() + (self.echeance or 0.0)
+        self._limite_pas = time.monotonic() + self.echeance
         # L'horloge d'abord : les consommateurs (Godot) datent les événements du pas avec ce tick.
         self._emettre("clock.tick", self.horloge.decrire(t))
         self.traiter_commandes_externes()
@@ -740,9 +733,11 @@ class Simulation:
                 self.s1_stats["decide_seul"] += 1
                 a.n_notes_vues, a.peur_llm, a.estime_llm = a.n_notes, a.peur, a.estime_autres
                 # « attendre » et « rien » ont le même effet : le Système 1 garde la nuance choisie par le LLM.
+                # Publiée à chaque fois, comme une décision du LLM : on voit qui a décidé, même sans changement.
                 action = a.intention if a.intention in ("attendre", "rien") else avis.action
                 self._appliquer(a, action, self.s1.regle_id, f"Système 1 ({self.s1.nom}) : {avis.detail} ; "
-                                f"retrait jugé improbable (confiance {avis.confiance:.2f})", ouvert, avis=avis)
+                                f"retrait jugé improbable (confiance {avis.confiance:.2f})", ouvert, forcer=True,
+                                avis=avis)
                 continue
             if self.t - a.t_llm < intervalle:
                 self.s1_stats["reportees"] += 1
@@ -757,8 +752,7 @@ class Simulation:
         for a, rq, rappel in zip(agents, requetes, rappels):
             a.reflexion = (self.llm.soumettre(rq), self.t, rappel)
             a.t_llm, a.n_notes_vues = self.t, a.n_notes
-        if not self._attendre([a.reflexion[0] for a in agents]):
-            return
+        self._attendre([a.reflexion[0] for a in agents])
         for a in agents:                             # arrivées avant l'échéance : appliquées dans ce pas
             if a.reflexion[0].done():
                 future, t0, rappel = a.reflexion
@@ -893,7 +887,8 @@ class Simulation:
                                         self._textes_rappel(rappel)),
             prompts.valider_employe)
         e = Echange(self.llm.soumettre(rq), self.t, a, ag, eid, question, consigne, rappel)
-        if self._attendre([e.future]) and e.future.done():
+        self._attendre([e.future])
+        if e.future.done():
             self._recevoir_echange(e, "dans_le_pas")
         else:
             self._echanges.append(e)
@@ -1016,8 +1011,8 @@ class Simulation:
                                                   self._dernier_communique, self._textes_rappel(rappel)),
                     prompts.valider_direction)
                 self._deliberation = (self.llm.soumettre(rq), self.t, rappel)
-                if self._attendre([self._deliberation[0]]):
-                    self._recevoir_deliberation("dans_le_pas")
+                self._attendre([self._deliberation[0]])
+                self._recevoir_deliberation("dans_le_pas")
             return
         self._direction_regle(file_totale, part)
 

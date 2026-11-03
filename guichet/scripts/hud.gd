@@ -91,6 +91,7 @@ class CourbesRuns extends Control:
 var main: Node
 var clock_text := "—"
 var show_all_conversations := false
+const LOG_MAX_LIGNES := 800                 # lignes gardées dans le fil « Ce qui se dit dans la vallée »
 
 var _conn_l: Label
 var _run_l: Label
@@ -99,7 +100,7 @@ var _dep_sb: SpinBox
 var _seed_sb: SpinBox
 var _rythme_s: HSlider
 var _llm_cb: CheckBox
-var _mode_ob: OptionButton
+var _echeance_s: HSlider
 var _svc_l: Label
 var _svc_retards: Array = []
 var _rejeu := ""
@@ -178,7 +179,7 @@ func _build_left(root: Control) -> void:
 	_section(v, "Lancer un run")
 	_config_ob = OptionButton.new()
 	v.add_child(_config_ob)
-	_dep_sb = _spin(v, "Déposants", 10, 400, 10, 140)
+	_dep_sb = _spin(v, "Déposants", 5, 400, 5, 45)
 	_seed_sb = _spin(v, "Graine", 1, 9999, 1, 1)
 	_rythme_s = _slider(v, "Secondes réelles par pas de 15 min", 0.05, 2.0, 0.05, 0.5, "s", func(x): _set_rythme(x))
 	_llm_cb = CheckBox.new()
@@ -186,12 +187,9 @@ func _build_left(root: Control) -> void:
 	_llm_cb.button_pressed = true
 	_llm_cb.tooltip_text = "Décoché : tous les agents décident avec leurs règles, sans aucun appel aux API."
 	v.add_child(_llm_cb)
-	_mode_ob = OptionButton.new()
-	_mode_ob.add_item("Mode synchrone : tous agissent au même pas")
-	_mode_ob.add_item("Mode asynchrone : chacun à son rythme, latences réelles")
-	_mode_ob.add_item("Mode hybride : le pas attend jusqu'à l'échéance, les retardataires suivent")
-	_mode_ob.tooltip_text = "Synchrone : le pas attend toutes les réponses LLM.\nAsynchrone : il n'en attend aucune ; chaque décision arrive avec la latence réelle du modèle.\nHybride : il les attend au plus quelques secondes (hybride.echeance_s) ; les réponses en retard s'appliquent au pas où elles arrivent (C4)."
-	v.add_child(_mode_ob)
+	# Traitement hybride, seul mode (C4) : réglé par son échéance, lue au lancement.
+	_echeance_s = _slider(v, "Attente max des réponses LLM par pas", 1.0, 10.0, 0.5, 3.0, "s", func(_x): pass)
+	_echeance_s.tooltip_text = "Le pas attend les réponses LLM au plus ce temps réel : celles arrivées à temps s'appliquent dans le pas (voie synchrone), les retardataires au pas où elles arrivent (voie asynchrone)."
 	var row := HBoxContainer.new()
 	var go := Button.new()
 	go.text = "Lancer"
@@ -486,7 +484,7 @@ func on_runs(runs: Array) -> void:
 		_cmp_grid.add_child(cb)
 		var cells := [
 			"%s%s%s" % [str(r["config"]), " · LLM" if r.get("llm", false) else "",
-				{"asynchrone": " · async", "hybride": " · hybride"}.get(r.get("mode", ""), "")],
+				{"synchrone": " · synchrone (ancien)", "asynchrone": " · asynchrone (ancien)"}.get(r.get("mode", ""), "")],
 			str(r["graine"]),
 			str(r["deposants"]) if r["deposants"] != null else "—",
 			("%.2f" % float(r["icc_max"])) if r["icc_max"] != null else "—",
@@ -610,7 +608,7 @@ func _on_launch() -> void:
 	_paused = false
 	_pause_b.text = "Pause"
 	main.launch_run(_config_ob.get_item_text(_config_ob.selected), int(_dep_sb.value), int(_seed_sb.value),
-		_rythme_s.value, _llm_cb.button_pressed, ["synchrone", "asynchrone", "hybride"][_mode_ob.selected])
+		_rythme_s.value, _llm_cb.button_pressed, _echeance_s.value)
 
 
 func _set_rythme(x: float) -> void:
@@ -1001,3 +999,6 @@ func log_line(t: String) -> void:
 	if _log == null:
 		return
 	_log.append_text("[color=#aebbb4]%s[/color]  %s\n" % [clock_text, t])
+	# Les décisions de tous les habitants font plusieurs milliers de lignes par run : on garde les dernières.
+	while _log.get_paragraph_count() > LOG_MAX_LIGNES:
+		_log.remove_paragraph(0)

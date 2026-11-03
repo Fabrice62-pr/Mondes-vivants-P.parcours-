@@ -78,9 +78,9 @@ func send_command(commande: String, parametres: Dictionary) -> void:
 		hud.log_line("[color=#ff8a6a]Bridge non connecté : commande « %s » non envoyée.[/color]" % commande)
 
 
-func launch_run(config: String, deposants: int, graine: int, rythme: float, llm: bool, mode: String) -> void:
+func launch_run(config: String, deposants: int, graine: int, rythme: float, llm: bool, echeance: float) -> void:
 	bridge.send({"action": "lancer", "config": config, "deposants": deposants, "graine": graine, "rythme": rythme,
-		"llm": llm, "mode": mode})
+		"llm": llm, "echeance": echeance})
 
 
 ## Rejoue un run enregistré (E3) : le bridge relit son historique, sans aucun appel LLM.
@@ -362,12 +362,25 @@ func _on_decision(p: Dictionary, t: int) -> void:
 	a.derniere_decision["t_sim"] = t
 	a.derniere_decision["quand"] = hud.clock_text
 	a.update_color()
-	if a.named:
-		var source: String = ("LLM " + a.modele) if p["type"] == "llm" else str(p["regle_id"])
-		if p.get("voie", "") == "en_retard":
-			source += ", en retard de %d min" % (t - int(p["t_sim_contexte"]))
-		hud.log_line("[b]%s[/b] décide : %s [color=#aebbb4](%s : %s)[/color]" % [
-			a.display_name, p["action"], source, p["justification"]])
+	# Tous les habitants, pas seulement les personnages : on voit qui décide, Système 1, 2 ou 1+2.
+	var source: String = ("LLM " + a.modele) if p["type"] == "llm" else str(p["regle_id"])
+	if p.get("voie", "") == "en_retard":
+		source += ", en retard de %d min" % (t - int(p["t_sim_contexte"]))
+	var systeme: Array = _systeme(p)
+	hud.log_line("[b]%s[/b] décide : %s [color=#aebbb4](%s : %s)[/color] [color=%s]([b]%s[/b])[/color]" % [
+		a.display_name, p["action"], source, p["justification"], systeme[1], systeme[0]])
+
+
+## Qui a pris la décision, et sa couleur dans le fil :
+##   Système 1   : sans LLM (jugement rapide du Système 1, règle, ou repli sur la règle après une panne du LLM) ;
+##   Système 2   : le LLM, appelé directement (pas de Système 1 dans ce run) ;
+##   Système 1+2 : le Système 1 a jugé la situation et l'a confiée au LLM, qui a tranché.
+func _systeme(p: Dictionary) -> Array:
+	if p["type"] != "llm":
+		return ["Système 1", "#8fd3a8"]
+	if p.get("systeme1") != null:
+		return ["Système 1+2", "#e8c170"]
+	return ["Système 2", "#9ec5f0"]
 
 
 func _on_counter(p: Dictionary) -> void:

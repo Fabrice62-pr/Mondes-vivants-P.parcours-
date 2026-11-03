@@ -5,7 +5,8 @@ planté n'en avait pas : il restait invisible pour l'archive et l'écran de comp
 les calculs du moteur sur les événements et écrit un resume.json marqué « interrompu ».
 
 Ce que l'historique ne permet pas de retrouver vaut None : après un défaut, les pertes des déposants qui
-n'étaient pas au guichet ; pour le Système 1, les décisions prises sans changer d'intention (non publiées).
+n'étaient pas au guichet ; pour le Système 1, les évaluations qui n'ont mené à aucune décision (escalade
+reportée).
 
     python -m services.reconstitution                 # runs sans resume.json et inactifs depuis 10 min
     python -m services.reconstitution --run <run_id>
@@ -51,7 +52,7 @@ def reconstituer(dossier: Path, ecrire: bool = True) -> dict | None:
     defaut = None
     solvable = True
     appels: dict[str, dict] = {}
-    decisions_llm, replis = 0, 0
+    decisions_llm, replis, s1_seul = 0, 0, 0
     voies: Counter = Counter()
     escalades: Counter = Counter()
     verdicts: Counter = Counter()
@@ -105,6 +106,8 @@ def reconstituer(dossier: Path, ecrire: bool = True) -> dict | None:
                                  else ("ambigu_retirer" if retire else "ambigu_non")] += 1
                 elif p["type"] == "repli_regles" or (p["type"] == "systeme1" and p["justification"].startswith("repli")):
                     replis += 1
+                elif p["type"] == "systeme1":
+                    s1_seul += 1
     if debut is None or t_fin == 0:
         return None
 
@@ -142,7 +145,8 @@ def reconstituer(dossier: Path, ecrire: bool = True) -> dict | None:
             "replis": replis, "incidents": par_type["incident.raised"],
             "systeme1": None if moteur_s1 == "aucun" else {
                 "moteur": moteur_s1, "confiance_min": cfg.get("systeme1", {}).get("confiance_min"),
-                "evaluations": None, "decide_seul": None, "reportees": None,
+                # decide_seul : publié à chaque fois depuis le 28/10/2026 (avant, seulement sur changement d'intention)
+                "evaluations": None, "decide_seul": s1_seul, "reportees": None,
                 "escalades": {k: escalades[k] for k in ("retrait", "ambigu")},
                 "verdicts_llm": {k: verdicts[k] for k in ("retrait_confirme", "retrait_infirme",
                                                           "ambigu_retirer", "ambigu_non")}}},

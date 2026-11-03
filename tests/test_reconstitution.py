@@ -61,7 +61,8 @@ def test_resume_reconstitue_avec_llm_et_systeme1(tmp_path):
         assert r["llm"][k] == moteur["llm"][k], k
     s1_r, s1_m = r["llm"]["systeme1"], moteur["llm"]["systeme1"]
     assert s1_r["escalades"] == s1_m["escalades"] and s1_r["verdicts_llm"] == s1_m["verdicts_llm"]
-    assert s1_r["decide_seul"] is None                  # non publié quand l'intention ne change pas
+    assert s1_r["decide_seul"] == s1_m["decide_seul"] > 0   # chaque décision du Système 1 est publiée
+    assert s1_r["evaluations"] is None                  # une escalade reportée ne publie rien
 
 
 def test_run_coupe_en_plein_milieu(tmp_path):
@@ -95,7 +96,7 @@ def test_archive_distingue_les_runs_interrompus(tmp_path):
     assert archiver_run(dossier)
     con = ouvrir(tmp_path / "archive.duckdb", tmp_path)
     ligne = con.sql("SELECT interrompu, etiquette, config, mode, systeme1 FROM runs").fetchone()
-    assert ligne == (True, "essai", "emergence", "synchrone", "aucun")
+    assert ligne == (True, "essai", "emergence", "hybride", "aucun")
 
 
 def test_run_started_porte_etiquette_et_version_du_code(tmp_path):

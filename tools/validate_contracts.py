@@ -94,7 +94,7 @@ def check_configs() -> None:
         try:
             echeance(cfg)
         except (ValueError, KeyError, TypeError) as e:
-            errors.append(f"{name} : mode {cfg['mode']} mal configuré ({e})")
+            errors.append(f"{name} : traitement hybride mal configuré ({e})")
         s1 = cfg.get("systeme1") or {}
         if s1.get("moteur", "aucun") not in MOTEURS:
             errors.append(f"{name} : systeme1.moteur inconnu ({s1.get('moteur')})")

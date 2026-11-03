@@ -45,7 +45,8 @@ def test_messages_refuses(client):
     with c.websocket_connect("/ws") as ws:
         _hello(ws)
         for brut in ["pas du json", '{"action": "voler"}', '{"action": "lancer", "deposants": -3}',
-                     '{"action": "lancer", "inconnu": 1}', '{"action": "rejouer", "run_id": "../x"}']:
+                     '{"action": "lancer", "inconnu": 1}', '{"action": "rejouer", "run_id": "../x"}',
+                     '{"action": "lancer", "mode": "synchrone"}', '{"action": "lancer", "echeance": 0}']:
             ws.send_text(brut)
             r = ws.receive_json()
             assert r["type"] == "bridge.statut" and r["etat"] == "erreur", brut
@@ -56,11 +57,11 @@ def test_lancer_annonce_a_tous_les_clients(client):
     with c.websocket_connect("/ws") as ws1, c.websocket_connect("/ws") as ws2:
         _hello(ws1), _hello(ws2)
         ws1.send_json({"action": "lancer", "config": "principal.yaml", "deposants": 50, "graine": 3, "rythme": 0.2,
-                       "llm": False, "mode": "asynchrone"})
+                       "llm": False, "echeance": 2.5})
         for ws in (ws1, ws2):
             assert ws.receive_json() == {"type": "bridge.statut", "etat": "lance", "detail": "principal.yaml"}
     args = b.lances[0]
-    for attendu in (["--deposants", "50"], ["--graines", "3"], ["--mode", "asynchrone"]):
+    for attendu in (["--deposants", "50"], ["--graines", "3"], ["--echeance", "2.5"]):
         i = args.index(attendu[0])
         assert args[i:i + 2] == attendu
     assert "--sans-llm" in args

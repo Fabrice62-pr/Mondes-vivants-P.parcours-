@@ -227,8 +227,8 @@ Réalisée en semaine 5 à partir de ce qui a été appris ici (détail : `docs/
 
 **Constaté au premier run complet (13/10/2026)** : à la parution de l'article, une vingtaine d'agents sur
 gpt-oss-20b réfléchissent au même pas. Les 8 000 tokens par minute de Groq ne suffisent pas : le pas
-**attend** que le quota se libère (`attente_quota_max_s: 120` dans `configs/principal.yaml`), comme le veut
-la barrière du mode synchrone. Au-delà, l'agent décide avec sa règle et un incident `quota` est publié.
+**attend** que le quota se libère (`attente_quota_max_s: 120` dans `configs/principal.yaml`) ; depuis le
+traitement hybride, la réponse s'applique alors en retard, au pas où elle arrive. Au-delà, l'agent décide avec sa règle et un incident `quota` est publié.
 
 ## 9. Dépannage
 

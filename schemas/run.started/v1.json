@@ -14,7 +14,8 @@
         "synchrone",
         "asynchrone",
         "hybride"
-      ]
+      ],
+      "description": "Toujours hybride depuis le 28/10/2026 ; synchrone et asynchrone restent valides pour relire les runs plus anciens."
     },
     "echeance_s": {
       "type": [
@@ -22,7 +23,7 @@
         "null"
       ],
       "minimum": 0,
-      "description": "Attente maximale des réponses LLM dans un pas, en secondes réelles : null en synchrone (sans limite), 0 en asynchrone. Absent dans les runs antérieurs au mode hybride."
+      "description": "Attente maximale des réponses LLM dans un pas, en secondes réelles (traitement hybride, seul mode depuis le 28/10/2026). Les runs plus anciens peuvent porter null (synchrone, sans limite) ou 0 (asynchrone), ou ne pas avoir ce champ."
     },
     "config_nom": {
       "type": "string",

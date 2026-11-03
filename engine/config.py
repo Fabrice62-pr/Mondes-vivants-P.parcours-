@@ -31,20 +31,16 @@ def charger_config(chemin: str | Path) -> dict:
     return cfg
 
 
-def echeance(cfg: dict) -> float | None:
-    """Attente maximale des réponses LLM dans un pas, en secondes réelles (C4) : None = sans limite
-    (synchrone), 0 = aucune attente (asynchrone), hybride.echeance_s entre les deux."""
-    mode = cfg["mode"]
-    if mode == "synchrone":
-        return None
-    if mode == "asynchrone":
-        return 0.0
-    if mode == "hybride":
-        e = float(cfg["hybride"]["echeance_s"])
-        if e < 0:
-            raise ValueError(f"hybride.echeance_s négative : {e}")
-        return e
-    raise ValueError(f"mode inconnu : {mode}")
+def echeance(cfg: dict) -> float:
+    """Attente maximale des réponses LLM dans un pas, en secondes réelles (C4, traitement hybride). Les
+    modes synchrone et asynchrone séparés ont été supprimés : une configuration qui les demande est refusée."""
+    mode = cfg.get("mode", "hybride")
+    if mode != "hybride":
+        raise ValueError(f"mode {mode} supprimé : seul le traitement hybride existe (réglé par hybride.echeance_s)")
+    e = float(cfg["hybride"]["echeance_s"])
+    if e <= 0:
+        raise ValueError(f"hybride.echeance_s doit être strictement positive : {e}")
+    return e
 
 
 def empreinte(cfg: dict) -> str:

@@ -1,5 +1,5 @@
-"""Traitement hybride (C4, H2) : un pas attend les réponses LLM jusqu'à l'échéance ; les retardataires
-s'appliquent plus tard. Synchrone et asynchrone sont les deux cas limites du même mécanisme."""
+"""Traitement hybride (C4, H2), seul mode d'exécution : un pas attend les réponses LLM jusqu'à l'échéance
+(voie synchrone) ; les retardataires s'appliquent plus tard (voie asynchrone)."""
 import copy
 import time
 
@@ -27,15 +27,13 @@ class Latences(Faux):
         return super().appeler(modele, *args)
 
 
-def _run(mode, echeance_s=None, latence=0.1, jours=4, rythme_s=0.01):
+def _run(echeance_s, latence=0.1, jours=4, rythme_s=0.01):
     cfg = copy.deepcopy(charger_config("scenarios/emergence.yaml"))
     cfg["population"]["deposants"] = 30
     cfg["horloge"]["duree_jours"] = jours
     cfg["llm"]["actif"] = True
     cfg["rag"]["actif"] = False
-    cfg["mode"] = mode
-    if echeance_s is not None:
-        cfg["hybride"]["echeance_s"] = echeance_s
+    cfg["hybride"]["echeance_s"] = echeance_s
     faux = Latences(repondeur_plausible, latence)
     p = Passerelle(charger_modeles(), cfg["llm"], {}, fournisseurs={n: faux for n in ("groq", "mistral", "google")})
     puits = PuitsMemoire()
@@ -53,7 +51,7 @@ def _run(mode, echeance_s=None, latence=0.1, jours=4, rythme_s=0.01):
 
 
 def test_hybride_les_deux_voies_dans_le_meme_run():
-    sim, ev, decisions, lents = _run("hybride", echeance_s=0.03)
+    sim, ev, decisions, lents = _run(0.03)
     assert ev[0]["payload"]["mode"] == "hybride" and ev[0]["payload"]["echeance_s"] == 0.03
     voies = {d["payload"]["voie"] for d in decisions}
     assert voies == {"dans_le_pas", "en_retard"}
@@ -70,25 +68,19 @@ def test_hybride_les_deux_voies_dans_le_meme_run():
                                             for v in ("dans_le_pas", "en_retard")}
 
 
-def test_synchrone_attend_toutes_les_reponses():
-    _, ev, decisions, _ = _run("synchrone", latence=0.02)
-    assert ev[0]["payload"]["echeance_s"] is None
+def test_echeance_longue_toutes_dans_le_pas():
+    _, ev, decisions, _ = _run(2.0, latence=0.02)
+    assert ev[0]["payload"]["mode"] == "hybride" and ev[0]["payload"]["echeance_s"] == 2.0
     assert all(d["payload"]["voie"] == "dans_le_pas" and d["t_sim"] == d["payload"]["t_sim_contexte"]
                for d in decisions)
 
 
-def test_asynchrone_n_attend_jamais():
-    _, ev, decisions, _ = _run("asynchrone", latence=0.02)
-    assert ev[0]["payload"]["echeance_s"] == 0
-    assert all(d["payload"]["voie"] == "en_retard" and d["t_sim"] > d["payload"]["t_sim_contexte"]
-               for d in decisions)
-
-
-def test_echeance_selon_le_mode():
-    assert echeance({"mode": "synchrone"}) is None
-    assert echeance({"mode": "asynchrone"}) == 0
-    assert echeance({"mode": "hybride", "hybride": {"echeance_s": 2.5}}) == 2.5
-    with pytest.raises(ValueError):
-        echeance({"mode": "hybride", "hybride": {"echeance_s": -1}})
-    with pytest.raises(ValueError):
-        echeance({"mode": "parallele"})
+def test_echeance_et_anciens_modes_refuses():
+    assert echeance({"hybride": {"echeance_s": 2.5}}) == 2.5
+    assert echeance({"mode": "hybride", "hybride": {"echeance_s": 3}}) == 3
+    for e in (0, -1):
+        with pytest.raises(ValueError):
+            echeance({"hybride": {"echeance_s": e}})
+    for mode in ("synchrone", "asynchrone", "parallele"):
+        with pytest.raises(ValueError, match="supprimé"):
+            echeance({"mode": mode, "hybride": {"echeance_s": 3}})

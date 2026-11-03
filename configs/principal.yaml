@@ -3,13 +3,12 @@
 
 nom: principal
 graine: 1                       # fixe l'attribution des modèles, les profils et les tirages aléatoires
-mode: synchrone                 # synchrone | asynchrone | hybride (C4)
-asynchrone:
-  rythme_s: 0.5                 # secondes réelles par pas de 15 min ; une réponse LLM de 1,5 s arrive 3 pas plus tard
+# Traitement hybride, seul mode d'exécution (C4) : il réunit les deux voies dans un même run. Les réponses
+# LLM arrivées avant l'échéance s'appliquent dans le pas (voie synchrone), les retardataires au pas où elles
+# arrivent (voie asynchrone).
 hybride:
-  echeance_s: 3                 # le pas attend les réponses LLM au plus 3 s réelles ; les retardataires s'appliquent
-                                # au pas où elles arrivent (synchrone = échéance infinie, asynchrone = échéance nulle)
-  rythme_s: 0.5                 # secondes réelles entre deux pas, comme en asynchrone
+  echeance_s: 3                 # le pas attend les réponses LLM au plus 3 s réelles (réglable dans Godot)
+  rythme_s: 0.5                 # secondes réelles entre deux pas de 15 min (curseur de rythme dans Godot)
 
 horloge:
   pas_min: 15                   # 1 pas = 15 minutes simulées
@@ -22,7 +21,7 @@ horloge:
     fermeture: "17:00"
 
 population:
-  deposants: 140                # hors personnages principaux
+  deposants: 45                 # hors personnages principaux (+ 3 principaux, employé et direction = 50 habitants)
   part_regles: 0.25             # A6 : les 25 % les moins exposés à l'information (sociabilité la plus faible)
   part_connectes: 0.20          # déposants très connectés : reçoivent l'article dès sa parution
   # Répartition des agents « petit modèle » entre fournisseurs. C'est un choix de charge, pas un
@@ -129,9 +128,9 @@ llm:
 # rapide et local décide d'abord, sans appel API. Il ne confie au LLM (Système 2) qu'un retrait, toujours
 # vérifié, ou une situation ambiguë. intervalle_decision_min ne limite alors que les appels au LLM.
 systeme1:
-  moteur: aucun                 # aucun | regle | nli | appris ; remplacé au lancement par --systeme1
-                                # aucun par défaut : regle supprime la panique, nli et appris restent à
-                                # valider (docs/hypotheses.md, résultats H8)
+  moteur: nli                   # aucun | regle | nli | appris ; remplacé au lancement par --systeme1
+                                # nli : le seul qui garde l'issue des runs ; regle supprime la panique,
+                                # appris reste à valider (docs/hypotheses.md, résultats H8)
   confiance_min: 0.85           # en dessous, le LLM tranche (confiance = probabilité de la réponse choisie, 0,5 à 1)
   marge: 0.10                   # regle : écart pression - seuil qui donne une confiance de 1 (0,85 à 0,07 du seuil)
   modele_nli: MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7   # nli : ~280 M de paramètres, français

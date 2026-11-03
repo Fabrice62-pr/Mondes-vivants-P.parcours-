@@ -21,18 +21,17 @@ le bridge, puis ouvre ce projet dans Godot. Ensuite, dans Godot :
 2. réglez le rythme, en secondes réelles par pas de 15 minutes simulées ;
 3. laissez cochée la case **Agents LLM** pour que les personnages et les déposants réfléchissent avec un
    LLM gratuit, ou décochez-la pour un run uniquement à règles, sans consommer de quota ;
-4. choisissez le **mode** : synchrone (tous agissent au même pas), asynchrone (chacun à son rythme, les
-   décisions arrivent avec la latence réelle des modèles) ou hybride (le pas attend les réponses quelques
-   secondes au plus ; celles qui arrivent après s'appliquent plus tard, et l'inspection l'indique) ;
+4. réglez l'**attente max des réponses LLM par pas** (3 s par défaut). Le run est toujours en traitement
+   hybride : les réponses arrivées à temps s'appliquent dans le pas, celles qui arrivent après
+   s'appliquent plus tard, et l'inspection l'indique ;
 5. cliquez sur **Lancer**.
 
 **Rejouer un run** : bouton **Comparer les runs passés**, puis **Rejouer** sur la ligne du run. Le run
 est rejoué à l'identique à partir de ses données enregistrées, sans aucun appel LLM ; la ligne du run
 affiche « REJEU ». Pause et vitesse fonctionnent ; les autres leviers n'ont pas d'effet.
 
-Avec les agents LLM, le run peut **marquer des pauses** : en mode synchrone, chaque pas attend les
-réponses des modèles, et parfois que le quota gratuit de Groq se libère (surtout le vendredi matin,
-quand tout le monde apprend la nouvelle en même temps).
+Avec les agents LLM, un pas peut durer jusqu'à l'attente max réglée ci-dessus quand les modèles tardent à
+répondre (surtout le vendredi matin, quand tout le monde apprend la nouvelle en même temps).
 
 On peut aussi ouvrir le projet à la main avec F5 : Godot se connecte au bridge dès qu'il est disponible et
 se reconnecte tout seul. Il peut même rejoindre un run déjà en cours.
@@ -73,15 +72,16 @@ l'entrepreneur, l'employé d'agence, la direction) sont plus grands et portent l
 habitants sont légèrement grossis pour que leurs couleurs restent lisibles.
 
 **Déplacements** : les habitants suivent les routes quand le détour est raisonnable, contournent maisons,
-arbres et rivière (on traverse par les ponts) et gardent leurs distances. La cadence des pas suit leur
-vitesse : marche, petite course, course (les habitants qui se précipitent à l'agence courent). Dans une
-file, chacun avance d'un pas quand la file avance et regarde vers le guichet ; dans une conversation, les
-deux habitants se font face.
+arbres et rivière (on traverse par les ponts) et gardent leurs distances. Ils marchent toujours (jamais
+de course) et la cadence des pas suit leur vitesse ; ceux qui se rendent à l'agence pressent le pas. Dans
+une file, chacun avance d'un pas quand la file avance et regarde vers le guichet ; dans une conversation,
+les deux habitants se font face.
 
 Le temps simulé est très comprimé (15 minutes en 0,5 s par défaut) : pour ne pas décrocher du moteur, un
-trajet dure au plus 10 pas à l'écran, et les longs trajets se font donc en courant. **Plus le rythme est
-lent, plus les déplacements sont réalistes** : vers 2 s par pas, les habitants marchent ou trottinent à
-une allure humaine.
+trajet dure au plus 20 pas à l'écran, sans jamais dépasser 10 m/s (`V_MAX` dans `scripts/agent_view.gd`).
+Les plus longs trajets arrivent donc un peu après le moteur, et les pieds glissent légèrement au-delà
+d'environ 2 m/s. **Plus le rythme est lent, plus les déplacements sont réalistes** : vers 2 s par pas,
+presque tous les trajets se font à une allure de marche normale.
 
 **Jour et nuit** : le soleil suit l'heure simulée ; la nuit, fenêtres et lampadaires s'allument.
 

@@ -84,8 +84,8 @@ def test_commande_garantie_reduit_la_pression():   # D3
     assert a.pression(sim.couverture(a.depot)) < avant
 
 
-def test_mode_inconnu_refuse():                     # C4 : synchrone ou asynchrone (test_semaine7.py)
+def test_ancien_mode_refuse():                      # C4 : seul le traitement hybride existe (test_hybride.py)
     cfg = copy.deepcopy(charger_config("principal.yaml"))
-    cfg["mode"] = "quantique"
+    cfg["mode"] = "synchrone"
     with pytest.raises(ValueError):
         Simulation(cfg, 1, [PuitsMemoire()])

@@ -14,22 +14,22 @@ const COL_STAFF := Color("2f5d8a")
 
 const MODEL := preload("res://assets/personnages/ual_standard.glb")
 
-## Allures : vitesse au sol (m/s) de chaque animation jouée à vitesse normale, mesurée sur le squelette
-## (le pied d'appui doit rester immobile au sol). La cadence est ajustée à la vitesse réelle du
-## personnage, pour que les pieds ne glissent pas.
+## Les habitants marchent toujours (jamais de course) : vitesse au sol (m/s) de l'animation de marche
+## jouée à vitesse normale, mesurée sur le squelette. La cadence suit la vitesse réelle du personnage,
+## jusqu'à MAX_ANIM_SCALE ; au-delà, les pieds glissent un peu plutôt que de mouliner.
 const GAIT_WALK := {"anim": "Walk", "speed": 0.95}
-const GAIT_JOG := {"anim": "Jog_Fwd", "speed": 3.6}
-const GAIT_SPRINT := {"anim": "Sprint", "speed": 6.6}
-const MAX_ANIM_SCALE := 2.0   # au-delà, la cadence deviendrait illisible : les pieds glissent un peu
+const MAX_ANIM_SCALE := 2.2
 
 ## Allures souhaitées (m/s), comme de vrais piétons. Le temps simulé est très comprimé (15 min par pas) :
 ## un trajet ne peut pas durer plus de LAG_STEPS pas à l'écran, sinon l'agent décrocherait du moteur.
-## Au-delà, il presse le pas. Ralentir le rythme (curseur « secondes par pas ») rend donc les
-## déplacements plus réalistes.
+## Au-delà, il presse le pas, sans jamais dépasser V_MAX : sur les plus longs trajets, il arrive alors
+## un peu après le moteur (l'instantané suivant le recale). Ralentir le rythme (curseur « secondes par
+## pas ») rend les déplacements plus réalistes.
 const PACE_STROLL := 1.35     # promenade
-const PACE_HURRY := 3.2       # se presser vers l'agence
-const PACE_PANIC := 5.5       # courir à l'agence quand la peur est forte
-const LAG_STEPS := 10.0
+const PACE_HURRY := 1.7       # pas pressé vers l'agence
+const PACE_PANIC := 2.0       # pas très pressé quand la peur est forte
+const V_MAX := 10.0           # vitesse maximale à l'écran (m/s)
+const LAG_STEPS := 20.0
 const MIN_TRIP := 0.6         # s
 const TURN_RATE := 8.0        # rad/s (lissé)
 const LANE := 0.55            # écart latéral max (m) : on ne marche pas tous dans la même trace
@@ -288,21 +288,15 @@ static func separate(list: Array) -> void:
 		a._sep_goal = (a._sep * 0.9 + push).limit_length(1.2)
 
 
-## Choisit l'allure (marche, petite course, course) et règle la cadence sur la vitesse au sol.
+## Marche, avec une cadence réglée sur la vitesse au sol.
 func _animate_gait(v: float) -> void:
 	if v < 0.15:
 		_play("Idle", 1.0)
 		return
-	var g := GAIT_WALK
-	var hurry := _req_hurry or v > 7.5
-	if v > 1.9 or (_anim == GAIT_JOG["anim"] and v > 1.6):
-		g = GAIT_JOG
-	if hurry and (v > 4.6 or (_anim == GAIT_SPRINT["anim"] and v > 4.0)):
-		g = GAIT_SPRINT
-	var anim: String = g["anim"]
-	if g == GAIT_WALK and role != "deposant":
+	var anim: String = GAIT_WALK["anim"]
+	if role != "deposant":
 		anim = "Walk_Formal"   # le personnel de la Caisse marche d'un pas plus posé
-	_play(anim, clampf(v / (g["speed"] * _model.scale.x), 0.5, MAX_ANIM_SCALE))
+	_play(anim, clampf(v / (GAIT_WALK["speed"] * _model.scale.x), 0.5, MAX_ANIM_SCALE))
 
 
 func _play(anim: String, speed: float) -> void:
@@ -367,7 +361,7 @@ func _start_trip() -> void:
 	if _len < 6.0:
 		pref = minf(pref, PACE_STROLL)   # quelques pas : on ne court pas pour avancer dans la file
 	var max_d := maxf(LAG_STEPS * tick_interval, _req_min)
-	_dur = clampf(_len / (pref * _pace), maxf(_req_min, MIN_TRIP), max_d)
+	_dur = maxf(clampf(_len / (pref * _pace), maxf(_req_min, MIN_TRIP), max_d), _len / V_MAX)
 	_v0 = _speed if walking else 0.0
 	_ramp_in = minf(0.2 if walking else 0.6, _dur * 0.3)
 	_ramp_out = minf(0.6, _dur * 0.3)

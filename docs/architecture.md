@@ -25,8 +25,9 @@
   en parallèle et le pas les attend **au plus `hybride.echeance_s` secondes réelles**. Une réponse arrivée
   à temps s'applique dans le pas (`decision.made.voie = dans_le_pas`) ; une réponse en retard s'applique au
   pas où elle arrive, datée de l'instant où l'agent a commencé à réfléchir (`voie = en_retard`,
-  `t_sim_contexte`). Les deux voies coexistent dans un même run. Le mode synchrone (échéance infinie) et le
-  mode asynchrone (échéance nulle) sont les deux cas limites du même code.
+  `t_sim_contexte`). Les deux voies coexistent dans un même run. C'est le seul mode d'exécution : les
+  modes synchrone et asynchrone séparés ont été supprimés le 28/10/2026 (une configuration qui les demande
+  est refusée) ; l'échéance se règle dans Godot (curseur, 3 s par défaut) ou par `--echeance`.
 - **Système 1 / Système 2** (`engine/systeme1.py`, `systeme1` dans la configuration) : quand un déposant
   LLM a du nouveau, un jugement rapide et local (Système 1) répond à une seule question, « va-t-il retirer
   son argent ? », avec une probabilité. Un « non » assez sûr (confiance ≥ `confiance_min`) est décidé sans

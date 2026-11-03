@@ -1,4 +1,5 @@
-"""Semaine 7 : mode asynchrone (C4), rejeu (E3), archive interrogeable (F5). Sans réseau."""
+"""Semaine 7 : voies synchrone et asynchrone du traitement hybride (C4), rejeu (E3), archive interrogeable
+(F5). Sans réseau."""
 import copy
 import json
 import time
@@ -13,23 +14,23 @@ from services.rejeu import Rejeu, verifier
 from test_llm import Faux, repondeur_plausible
 
 
-def _cfg(mode="synchrone", llm=False, deposants=30, jours=3):
+def _cfg(echeance_s=3.0, llm=False, deposants=30, jours=3):
     cfg = copy.deepcopy(charger_config("scenarios/emergence.yaml"))
     cfg["population"]["deposants"] = deposants
     cfg["horloge"]["duree_jours"] = jours
-    cfg["mode"] = mode
+    cfg["hybride"]["echeance_s"] = echeance_s
     cfg["llm"]["actif"] = llm
     cfg["rag"]["actif"] = False
     return cfg
 
 
-# ------------------------------------------------------------------ mode asynchrone (C4, C3)
+# ------------------------------------------------------------------ voies du traitement hybride (C4, C3)
 
-def test_mode_asynchrone_decisions_appliquees_plus_tard():
+def test_voie_asynchrone_decisions_appliquees_plus_tard():
     def lent(s, u):
         time.sleep(0.05)                       # un LLM qui met 50 ms à répondre
         return repondeur_plausible(s, u)
-    cfg = _cfg("asynchrone", llm=True)
+    cfg = _cfg(0.01, llm=True)             # échéance de 10 ms, plus courte que la latence
     faux = Faux(lent)
     p = Passerelle(charger_modeles(), cfg["llm"], {}, fournisseurs={n: faux for n in ("groq", "mistral", "google")})
     puits = PuitsMemoire()
@@ -38,7 +39,7 @@ def test_mode_asynchrone_decisions_appliquees_plus_tard():
         sim.pas()
         time.sleep(0.01)
     ev = puits.evenements
-    assert sim.bus.rejets == 0 and ev[0]["payload"]["mode"] == "asynchrone"
+    assert sim.bus.rejets == 0 and ev[0]["payload"]["mode"] == "hybride"
     dec = [e for e in ev if e["type"] == "decision.made" and e["payload"]["type"] == "llm"
            and e["payload"]["agent_id"] not in ("employe",)]
     assert dec and all(e["payload"]["t_sim_contexte"] <= e["t_sim"] for e in dec)
@@ -47,8 +48,8 @@ def test_mode_asynchrone_decisions_appliquees_plus_tard():
     assert not any(e["type"] == "temporal.violation" for e in ev)
 
 
-def test_mode_synchrone_decision_au_meme_pas():
-    cfg = _cfg("synchrone", llm=True)
+def test_voie_synchrone_decision_au_meme_pas():
+    cfg = _cfg(llm=True)                   # réponses immédiates, bien avant l'échéance de 3 s
     faux = Faux(repondeur_plausible)
     p = Passerelle(charger_modeles(), cfg["llm"], {}, fournisseurs={n: faux for n in ("groq", "mistral", "google")})
     puits = PuitsMemoire()

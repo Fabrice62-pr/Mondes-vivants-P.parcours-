@@ -6,13 +6,15 @@
 
 --puits    : où publier (kafka, jsonl, memoire), séparés par des virgules. Défaut : jsonl.
 --rythme   : secondes réelles par pas simulé (0 = aussi vite que possible ; utile pour regarder dans Godot).
---deposants, --jours, --mode : remplacent la configuration au lancement (C2), sans modifier de code.
+--deposants, --jours : remplacent la configuration au lancement (C2), sans modifier de code.
+--echeance : attente maximale des réponses LLM par pas (s), à la place de hybride.echeance_s. Le traitement
+             hybride est le seul mode (C4) : réponses à temps dans le pas, retardataires aux pas suivants.
 --sans-llm : tous les agents décident par règles (aucun appel, aucun quota consommé).
 --systeme1 : moteur du Système 1 des déposants LLM (aucun, regle, nli), à la place de la configuration.
 --etiquette : nom de la série de runs à comparer (ex. reference, s1-regle), reporté dans l'archive.
 
-    python -m engine.run --mode hybride --graines 1-3 --systeme1 aucun --etiquette reference
-    python -m engine.run --mode hybride --graines 1-3 --systeme1 regle --etiquette s1-regle
+    python -m engine.run --graines 1-3 --systeme1 aucun --etiquette reference
+    python -m engine.run --graines 1-3 --systeme1 regle --etiquette s1-regle
 """
 import argparse
 import json
@@ -63,10 +65,10 @@ def executer(cfg: dict, graine: int, puits_noms: list[str], rythme: float, valid
     if "memoire" in puits_noms or not puits:
         puits.append(PuitsMemoire())
     sim = Simulation(cfg, graine, puits, run_id, valider, etiquette=etiquette)
-    if sim.echeance is not None and rythme <= 0:
-        # En hybride et en asynchrone, l'horloge simulée avance en temps réel : sans rythme, les réponses
-        # en retard arriveraient des jours simulés plus tard.
-        rythme = float(cfg.get(cfg["mode"], {}).get("rythme_s", 0.5))
+    if cfg["llm"]["actif"] and rythme <= 0:
+        # L'horloge simulée avance en temps réel : sans rythme, les réponses LLM en retard arriveraient des
+        # jours simulés plus tard. Sans LLM, rien n'arrive en retard : le run peut aller aussi vite que possible.
+        rythme = float(cfg["hybride"].get("rythme_s", 0.5))
     t0 = time.perf_counter()
     while not sim.fini:
         while sim.pause and not sim.fini:          # pause demandée depuis Godot
@@ -109,8 +111,7 @@ def main(argv=None) -> int:
     ap.add_argument("--graines", help="ex. 1-5 ou 1,3,7 (défaut : la graine de la configuration)")
     ap.add_argument("--deposants", type=int)
     ap.add_argument("--jours", type=int)
-    ap.add_argument("--mode", choices=["synchrone", "asynchrone", "hybride"])
-    ap.add_argument("--echeance", type=float, help="mode hybride : attente maximale des réponses LLM par pas (s)")
+    ap.add_argument("--echeance", type=float, help="attente maximale des réponses LLM par pas (s)")
     ap.add_argument("--puits", default="jsonl")
     ap.add_argument("--rythme", type=float, default=0.0)
     ap.add_argument("--sans-validation", action="store_true", help="déconseillé : désactive le contrôle F4")
@@ -125,8 +126,6 @@ def main(argv=None) -> int:
         cfg["population"]["deposants"] = a.deposants
     if a.jours is not None:
         cfg["horloge"]["duree_jours"] = a.jours
-    if a.mode:
-        cfg["mode"] = a.mode
     if a.echeance is not None:
         cfg.setdefault("hybride", {})["echeance_s"] = a.echeance
     if a.sans_llm:
@@ -137,7 +136,7 @@ def main(argv=None) -> int:
     puits = [p.strip() for p in a.puits.split(",") if p.strip()]
 
     print(f"Configuration « {cfg['nom']} » : {cfg['population']['deposants']} déposants + personnages principaux, "
-          f"{cfg['horloge']['duree_jours']} jours, mode {cfg['mode']}, LLM {'actifs' if cfg['llm']['actif'] else 'inactifs'}, "
+          f"{cfg['horloge']['duree_jours']} jours, échéance {cfg['hybride']['echeance_s']} s, LLM {'actifs' if cfg['llm']['actif'] else 'inactifs'}, "
           f"Système 1 {cfg.get('systeme1', {}).get('moteur', 'aucun')}, puits {','.join(puits)}"
           + (f", étiquette « {a.etiquette} »" if a.etiquette else ""))
     resultats = []

@@ -28,7 +28,7 @@ def test_part_regles_et_moins_exposes():           # A6
     deposants, _, _ = _pop(_cfg_llm())
     ordinaires = [a for a in deposants if not a.principal]
     regles = [a for a in ordinaires if a.type == "regles"]
-    assert len(regles) == round(140 * 0.25)
+    assert len(regles) == round(len(ordinaires) * 0.25)
     assert max(a.sociabilite for a in regles) <= min(a.sociabilite for a in ordinaires if a.type == "llm")
 
 

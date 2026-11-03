@@ -10,8 +10,8 @@ WebSocket /ws (Godot)
   Godot -> bridge : messages JSON, vérifiés par les modèles Pydantic ci-dessous (le champ `action` choisit
   le modèle ; un champ inconnu ou une valeur hors bornes est refusé avec un bridge.statut « erreur ») :
     {"action": "lister"}                                   liste des configurations disponibles
-    {"action": "lancer", "config": "principal.yaml", "deposants": 140, "graine": 1, "rythme": 0.5,
-     "llm": true, "mode": "hybride", "echeance": 3}       mode : synchrone | asynchrone | hybride
+    {"action": "lancer", "config": "principal.yaml", "deposants": 45, "graine": 1, "rythme": 0.5,
+     "llm": true, "echeance": 3}                          echeance : attente max des réponses LLM par pas (s)
     {"action": "arreter"}                                  arrête le run lancé par le bridge
     {"action": "comparer"}                                 résumés et courbes de l'ICC des derniers runs
     {"action": "rejouer", "run_id": "...", "rythme": 0.5}  rejoue un run enregistré (E3), sans appel LLM
@@ -101,8 +101,7 @@ class Lancement(_Strict):
     graine: int | None = Field(None, ge=0)
     rythme: float = Field(0.5, ge=0, le=60, description="secondes réelles par pas de 15 min simulées")
     llm: bool = True
-    mode: Literal["synchrone", "asynchrone", "hybride"] | None = None
-    echeance: float | None = Field(None, ge=0, le=600, description="mode hybride : attente maximale par pas (s)")
+    echeance: float | None = Field(None, gt=0, le=600, description="attente maximale des réponses LLM par pas (s)")
     systeme1: Literal["aucun", "regle", "nli", "appris"] | None = Field(None, description="Système 1 des déposants LLM")
     etiquette: str | None = Field(None, max_length=60, pattern=r"^[\w.-]+$",
                                   description="série de runs à comparer (ex. reference, s1-regle)")
@@ -273,8 +272,6 @@ class Bridge:
             args += ["--graines", str(p.graine)]
         if not p.llm:
             args.append("--sans-llm")
-        if p.mode is not None:
-            args += ["--mode", p.mode]
         if p.echeance is not None:
             args += ["--echeance", str(p.echeance)]
         if p.systeme1 is not None:

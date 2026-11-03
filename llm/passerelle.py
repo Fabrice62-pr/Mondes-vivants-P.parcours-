@@ -8,8 +8,8 @@ Règles (docs/README_api_key.md, § 7 et 8) :
   modèle, puis repli sur la règle de l'agent, avec un incident. Jamais un autre modèle ;
 - chaque essai produit un `llm.called` (tokens, latence, statut, numéro d'essai : E4).
 
-En mode synchrone, le moteur envoie toutes les requêtes d'un pas en un lot et attend les réponses
-(barrière). Les requêtes partent en parallèle (`max_simultanes`).
+Le moteur envoie les requêtes d'un pas en un lot et attend les réponses jusqu'à l'échéance du pas
+(traitement hybride). Les requêtes partent en parallèle (`max_simultanes`).
 
 La passerelle ne publie rien elle-même : elle renvoie les charges utiles des événements, que le moteur
 publie dans l'ordre, depuis le fil principal (numérotation `seq` stable).
@@ -61,8 +61,8 @@ class Passerelle:
         self.essais = int(cfg_llm.get("essais", 2))
         self.budget = int(cfg_llm.get("budget_appels", 4000))
         self.delai_defaut = float(cfg_llm.get("delai_max_s", 30))
-        # En mode synchrone, le pas attend que le quota se libère (barrière) au lieu de faire décider
-        # l'agent par règle ; au-delà de cette attente, repli avec incident « quota ».
+        # Quand le quota est atteint, la requête attend qu'il se libère au lieu de faire décider l'agent par
+        # règle (sa réponse arrive alors en retard) ; au-delà de cette attente, repli avec incident « quota ».
         self.attente_quota = float(cfg_llm.get("attente_quota_max_s", 120))
         # Un 429 (quota, ou serveur saturé : « backend_out_of_capacity » chez Mistral) est passager : on
         # réessaie après une attente croissante, sans entamer les essais prévus pour les vraies erreurs.

@@ -66,10 +66,9 @@ copy .env.example .env
 # Sans aucun appel LLM (tous les agents à règles) : pour la mise au point, sans consommer de quota
 .venv\Scripts\python -m engine.run --config principal.yaml --sans-llm
 
-# Modes (C4) : synchrone (le pas attend toutes les réponses LLM), asynchrone (il n'en attend aucune),
-# hybride (il les attend au plus --echeance secondes ; les réponses en retard s'appliquent à leur arrivée)
-.venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode asynchrone
-.venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --mode hybride --echeance 3
+# Traitement hybride, seul mode (C4) : le pas attend les réponses LLM au plus --echeance secondes (3 par
+# défaut) ; celles arrivées à temps s'appliquent dans le pas, les retardataires au pas où elles arrivent
+.venv\Scripts\python -m engine.run --config scenarios\emergence.yaml --echeance 5
 
 # Système 1 (engine/systeme1.py) : aucun (défaut), regle, nli (mDeBERTa local, ~1 Go téléchargé une fois) ou
 # appris (classifieur entraîné par tools\systeme1_apprentissage.py). Résultats : docs\hypotheses.md (H8)
@@ -100,9 +99,13 @@ copy .env.example .env
 ```
 
 Les agents LLM sont actifs par défaut (`llm.actif` dans `configs/principal.yaml`). Un run complet de
-140 déposants consomme plusieurs centaines d'appels gratuits : voir `docs/README_api_key.md`.
+45 déposants (50 habitants) consomme plusieurs centaines d'appels gratuits : voir `docs/README_api_key.md`.
 
 ## Contraintes du sujet
 
 Streaming Apache Kafka · visualisation Godot · LLM 100 % gratuits (Groq, Mistral, Google AI Studio) ·
 nombre d'agents paramétrable · RAG obligatoire · modes synchrone et asynchrone · monde fictif.
+
+Les modes synchrone et asynchrone sont réunis dans un seul **traitement hybride** : dans un même run, les
+réponses LLM arrivées avant l'échéance du pas s'appliquent dans le pas (voie synchrone), les autres au pas
+où elles arrivent (voie asynchrone). `decision.made.voie` indique la voie de chaque décision.
