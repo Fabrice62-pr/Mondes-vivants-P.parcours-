@@ -59,6 +59,16 @@
   est écrite au démarrage du run, et `run.started.code` donne la version du code (commit, empreinte).
 - **Rejeu** (`services/rejeu.py`) : republie un run enregistré dans Kafka, pas après pas, sans calcul
   ni appel LLM (E3). Lancé depuis Godot par le bridge.
+- **Tableau de bord de l'IA** (`services/tableau.py`, page dans `services/tableau_web/`) : application
+  FastAPI sur le port 8770 (http://127.0.0.1:8770). Il montre qui décide, ce que vaut la confiance affichée
+  (calibration du Système 1, peur écrite par les LLM, ancrage sur le prompt), la fiabilité des modèles et
+  la fiche de chaque décision (causes, appel LLM, documents du RAG, effets). Deux sources, mêmes chiffres :
+  **en direct**, consommateur Kafka qui range les événements dans une base DuckDB en mémoire et pousse les
+  métriques au navigateur par WebSocket ; **historique**, les Parquet de l'archive. Les métriques sont
+  écrites une seule fois, en SQL (`services/metriques.py`), sur les tables de l'archiveur ; en direct,
+  ces tables sont des vues construites avec les mêmes projections (`archiveur.selection`).
+  `tests/test_tableau.py` vérifie qu'un run donne les mêmes métriques en direct et dans l'archive. Un
+  run déjà commencé à l'ouverture du tableau de bord est rattrapé depuis son `events.jsonl`.
 
 ## Où vivent les données (F3)
 

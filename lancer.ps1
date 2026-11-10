@@ -68,6 +68,18 @@ if ($deja) {
     Write-Host "    Service prêt (journal : data\logs\indicateurs.log)"
 }
 
+# Tableau de bord de l'IA (direct + historique), sur le port 8770
+$occupe = Get-NetTCPConnection -LocalPort 8770 -State Listen -ErrorAction SilentlyContinue
+if ($occupe) {
+    Write-Host "    Tableau de bord déjà en marche : http://127.0.0.1:8770"
+} else {
+    $env:PYTHONIOENCODING = "utf-8"
+    Start-Process -FilePath $py -ArgumentList "-m", "services.tableau" -WorkingDirectory $PSScriptRoot `
+        -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logs "tableau.log") `
+        -RedirectStandardError (Join-Path $logs "tableau.err.log") | Out-Null
+    Write-Host "    Tableau de bord de l'IA : http://127.0.0.1:8770 (journal : data\logs\tableau.log)"
+}
+
 # 4. Godot
 if ($SansGodot) { Write-Host "Prêt. Ouvrez le projet guichet\ dans Godot."; exit 0 }
 Write-Host "4/4 Godot..." -ForegroundColor Cyan

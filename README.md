@@ -8,7 +8,7 @@ Simulation multi-agents d'un bank run dans la vallée fictive de Brévanne. Une 
 | Dossier | Contenu |
 |---|---|
 | `guichet/` | Projet Godot 4.7, la **vue** : scène 3D, HUD, inspection d'agent, leviers (voir `guichet/README.md`) |
-| `services/` | `bridge.py` : bridge FastAPI entre Godot (WebSocket `/ws`) et Kafka, routes REST et Swagger sur `/docs`, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `reconstitution.py` : résumé des runs interrompus. `comparaison.py` : résumés des runs pour Godot |
+| `services/` | `bridge.py` : bridge FastAPI entre Godot (WebSocket `/ws`) et Kafka, routes REST et Swagger sur `/docs`, lance le moteur ou un rejeu à la demande de Godot. `indicateurs.py` : ICC recalculé depuis Kafka et retard (C7). `rejeu.py` : rejeu d'un run enregistré (E3). `archiveur.py` : historique en Parquet et DuckDB (F5). `reconstitution.py` : résumé des runs interrompus. `comparaison.py` : résumés des runs pour Godot. `tableau.py` et `tableau_web/` : tableau de bord de l'IA (http://127.0.0.1:8770), en direct et sur l'historique ; ses métriques sont dans `metriques.py` |
 | `requetes/` | Requêtes SQL reproductibles sur l'historique des runs (scénarios, coût, décisions, mémoire, sources de l'ICC, modèle unique par agent) |
 | `lancer.bat`, `arreter.bat` | Démarrage en un double-clic (Kafka, bridge, Godot) et arrêt |
 | `archives/` | Maquette Godot d'origine, où la simulation tournait dans Godot |
@@ -30,6 +30,25 @@ Double-cliquez sur **`lancer.bat`** : Docker Desktop doit être démarré. Le sc
 puis ouvre Godot. Dans Godot, choisissez une configuration et cliquez sur **Lancer**.
 Pour tout arrêter, double-cliquez sur **`arreter.bat`** (Kafka reste en marche ; `arreter.bat -Kafka`
 l'arrête aussi).
+
+## Tableau de bord de l'IA
+
+`lancer.bat` le démarre aussi : ouvrez **http://127.0.0.1:8770**. Seul (sans Godot) :
+`.venv\Scripts\python -m services.tableau`.
+
+- Un **parcours de sept questions** (qui décide, ce qui s'est passé, fiabilité du Système 1, peur écrite par
+  les LLM, ancrage sur le prompt, fiabilité des modèles, pourquoi une décision). Chacune donne une réponse
+  courte calculée sur les données, un graphique avec « Comment lire ce graphique », et une partie
+  « Comprendre en profondeur » (mécanisme, fichiers du code concernés, requête SQL exacte).
+- **En direct** : les réponses du run en cours se mettent à jour chaque seconde (Kafka doit tourner). Un run
+  commencé avant l'ouverture de la page est rattrapé depuis son `events.jsonl`. Un rejeu s'affiche aussi.
+- **Historique** : un run archivé, ou tous ensemble avec leur comparaison. L'adresse garde le choix
+  (`#historique/<run_id>`).
+- Cliquer sur une décision ouvre sa **fiche** : avis du Système 1, appel au LLM, documents du RAG, événements
+  qui l'ont causée et ce qu'elle a changé.
+
+Toutes les métriques sont des requêtes SQL de `services/metriques.py`, identiques en direct et dans
+l'historique (vérifié par `tests/test_tableau.py`). API documentée sur http://127.0.0.1:8770/docs.
 
 ## Mise en route détaillée
 

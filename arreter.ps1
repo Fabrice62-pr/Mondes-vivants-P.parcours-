@@ -1,4 +1,4 @@
-﻿# Arrête le bridge, le service d'indicateurs et le moteur ou le rejeu éventuellement en cours.
+﻿# Arrête le bridge, le service d'indicateurs, le tableau de bord et le moteur ou le rejeu éventuellement en cours.
 #   .\arreter.ps1           arrête tout sauf Docker (Kafka, PostgreSQL)
 #   .\arreter.ps1 -Kafka    arrête aussi Kafka et PostgreSQL (docker compose stop)
 param([switch]$Kafka)
@@ -6,7 +6,8 @@ param([switch]$Kafka)
 Set-Location $PSScriptRoot
 $procs = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
     Where-Object { $_.CommandLine -like "*services.bridge*" -or $_.CommandLine -like "*engine.run*" -or
-                   $_.CommandLine -like "*services.indicateurs*" -or $_.CommandLine -like "*services.rejeu*" }
+                   $_.CommandLine -like "*services.indicateurs*" -or $_.CommandLine -like "*services.rejeu*" -or
+                   $_.CommandLine -like "*services.tableau*" }
 foreach ($p in $procs) {
     Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
     Write-Host "Arrêté : $($p.CommandLine -replace '.*-m ', '')"

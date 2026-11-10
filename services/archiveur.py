@@ -25,9 +25,11 @@ from engine.config import ROOT
 RUNS = ROOT / "data" / "runs"
 BASE = ROOT / "data" / "archive.duckdb"
 
-ENVELOPPE = ("{event_id: 'VARCHAR', type: 'VARCHAR', version: 'INTEGER', run_id: 'VARCHAR', seq: 'INTEGER', "
-             "t_sim: 'INTEGER', t_emit: 'VARCHAR', t_proc: 'VARCHAR', producer: 'VARCHAR', causes: 'VARCHAR[]', "
-             "payload: 'JSON'}")
+# Colonnes de la table `ev` : l'enveloppe d'un événement (schemas/envelope/v1.json).
+COLONNES_EV = {"event_id": "VARCHAR", "type": "VARCHAR", "version": "INTEGER", "run_id": "VARCHAR", "seq": "INTEGER",
+               "t_sim": "INTEGER", "t_emit": "VARCHAR", "t_proc": "VARCHAR", "producer": "VARCHAR",
+               "causes": "VARCHAR[]", "payload": "JSON"}
+ENVELOPPE = "{" + ", ".join(f"{k}: '{v}'" for k, v in COLONNES_EV.items()) + "}"
 
 
 def _t(champ: str, type_sql: str = "VARCHAR") -> str:
@@ -82,6 +84,22 @@ WHERE type = 'run.started'
 """
 
 
+def selection(nom: str) -> str:
+    """Requête qui extrait la table `nom` des enveloppes de la table `ev`. Seule définition des tables :
+    l'archive l'écrit en Parquet, le tableau de bord (services/tableau.py) en fait des vues sur le direct."""
+    if nom == "agents":
+        return AGENTS
+    type_, colonnes = TABLES[nom]
+    filtre = f"WHERE type = '{type_}'" if type_ else ""
+    return f"SELECT {BASE_COLS}, {', '.join(colonnes)} FROM ev {filtre}"
+
+
+def lire_enveloppes(fichier: Path, filtre: str = "") -> str:
+    """Requête qui lit un fichier d'enveloppes JSON (une par ligne) avec les colonnes de la table `ev`."""
+    return (f"SELECT * FROM read_json('{fichier.as_posix()}', format = 'newline_delimited', columns = {ENVELOPPE}, "
+            f"maximum_object_size = 104857600) {filtre}")
+
+
 def archiver_run(dossier: Path, con=None) -> bool:
     """Écrit dossier/archive/*.parquet. Renvoie False si le run n'est pas terminé (pas de resume.json)."""
     import duckdb
@@ -92,13 +110,10 @@ def archiver_run(dossier: Path, con=None) -> bool:
     sortie = dossier / "archive"
     sortie.mkdir(exist_ok=True)
     con.execute("DROP TABLE IF EXISTS ev")
-    con.execute(f"CREATE TEMP TABLE ev AS SELECT * FROM read_json('{ev_f.as_posix()}', format = 'newline_delimited', "
-                f"columns = {ENVELOPPE}, maximum_object_size = 104857600)")
-    for nom, (type_, colonnes) in TABLES.items():
-        filtre = f"WHERE type = '{type_}'" if type_ else ""
-        con.execute(f"COPY (SELECT {BASE_COLS}, {', '.join(colonnes)} FROM ev {filtre} ORDER BY seq) "
-                    f"TO '{(sortie / f'{nom}.parquet').as_posix()}' (FORMAT parquet)")
-    con.execute(f"COPY ({AGENTS}) TO '{(sortie / 'agents.parquet').as_posix()}' (FORMAT parquet)")
+    con.execute(f"CREATE TEMP TABLE ev AS {lire_enveloppes(ev_f)}")
+    for nom in TABLES:
+        con.execute(f"COPY ({selection(nom)} ORDER BY seq) TO '{(sortie / f'{nom}.parquet').as_posix()}' (FORMAT parquet)")
+    con.execute(f"COPY ({selection('agents')}) TO '{(sortie / 'agents.parquet').as_posix()}' (FORMAT parquet)")
     _ecrire_run(con, dossier, sortie)
     return True
 
@@ -172,10 +187,11 @@ TYPES_RUNS = {
 }
 
 
-def ouvrir(base: Path = BASE, runs: Path = RUNS):
-    """Base DuckDB dont chaque table est une vue sur les Parquet de tous les runs archivés."""
+def ouvrir(base: Path | None = BASE, runs: Path = RUNS):
+    """Base DuckDB dont chaque table est une vue sur les Parquet de tous les runs archivés. base None : base en
+    mémoire, qui ne verrouille pas data/archive.duckdb (le tableau de bord lit pendant que l'archiveur écrit)."""
     import duckdb
-    con = duckdb.connect(str(base))
+    con = duckdb.connect(str(base)) if base is not None else duckdb.connect()
     for nom in [*TABLES, "agents", "runs"]:
         if any(runs.glob(f"*/archive/{nom}.parquet")):
             motif = (runs / "*" / "archive" / f"{nom}.parquet").as_posix()

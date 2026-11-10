@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GUICHET · Comprendre les décisions de l'IA</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="barre">
+    <div class="marque"><strong>GUICHET</strong><span>Comprendre les décisions de l'IA</span></div>
+    <nav class="onglets" aria-label="Source des données">
+      <button data-source="direct" aria-pressed="true">En direct</button>
+      <button data-source="historique" aria-pressed="false">Historique</button>
+    </nav>
+    <label class="choix-run"><span>Run</span><select id="choix-run" aria-label="Run affiché"></select></label>
+    <div id="etat" class="etat" role="status"><i></i><span>Connexion…</span></div>
+  </header>
+
+  <div class="cadre">
+    <nav class="sommaire" aria-label="Questions"><ol id="sommaire"></ol></nav>
+
+    <main id="contenu">
+      <p id="message" class="message" hidden></p>
+
+      <!-- ============================================================ accueil -->
+      <section class="page" id="accueil" data-court="Vue d'ensemble">
+        <h1>Peut-on faire confiance aux décisions de l'IA ?</h1>
+        <p class="intro">Dans GUICHET, les habitants de Brévanne décident s'ils retirent leur argent de la Caisse.
+          La plupart décident avec un <b>LLM</b> : une IA qui lit un texte décrivant leur situation et écrit sa décision.
+          Cette page répond à sept questions pour comprendre ces décisions et savoir quelle confiance leur accorder.
+          Suivez-les dans l'ordre : chacune s'appuie sur la précédente.</p>
+
+        <div class="chiffres">
+          <div><b id="a-decisions">—</b><span>décisions prises par les habitants, la direction et les employés</span></div>
+          <div><b id="a-llm">—</b><span>de ces décisions écrites par un LLM</span></div>
+          <div><b id="a-retraits">—</b><span>retraits d'argent servis au guichet</span></div>
+          <div><b id="a-icc">—</b><span>ICC le plus haut atteint (voir la question 2)</span></div>
+        </div>
+
+        <h2>Les sept questions</h2>
+        <p class="aide">La pastille donne la réponse courte : <span class="pt ok"></span> rassurant,
+          <span class="pt attention"></span> à surveiller, <span class="pt info"></span> à lire.</p>
+        <div id="cartes" class="cartes"></div>
+
+        <div id="runs-archives" hidden>
+          <h2>Les runs archivés</h2>
+          <p class="aide">Cliquez sur un run pour répondre aux questions sur lui seul.</p>
+          <div class="table"><table class="cliquable">
+            <thead><tr><th>Run</th><th>Système 1</th><th>Issue</th><th class="n">Part retirée</th><th class="n">ICC max</th><th class="n">Appels LLM</th></tr></thead>
+            <tbody id="t-runs"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 1 -->
+      <section class="page" id="qui" data-court="Qui décide ?" hidden>
+        <p class="etape">Question 1</p>
+        <h1>Qui prend vraiment les décisions ?</h1>
+        <div class="verdict" id="v-qui"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-qui" aria-label="Part des modes de décision par type d'agent"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>Chaque barre est un type d'agent : les habitants (déposants), la direction de la Caisse, les employés du guichet.</li>
+              <li>Chaque couleur dit qui a pris la décision. Une barre toute bleue : le LLM a tout décidé.</li>
+              <li>L'<b class="c-repli">orange</b> est le point à surveiller : le LLM devait décider mais n'a pas répondu à temps, alors une règle fixe a décidé à sa place.</li>
+              <li>Passez la souris sur une couleur pour voir le nombre de décisions.</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>Les quatre façons de décider</h3>
+          <dl>
+            <dt class="c-llm">LLM</dt><dd>Le moteur écrit un texte (le <i>prompt</i>) qui décrit la situation de l'agent, l'envoie à un modèle (ministral-8b, gpt-oss…) et lit la décision dans sa réponse JSON.</dd>
+            <dt class="c-s1">Système 1</dt><dd>Un tri rapide, sans appel au LLM : il décide seul quand il est sûr que l'habitant ne retirera pas, et passe la main au LLM sinon (question 3).</dd>
+            <dt class="c-regle">Règle</dt><dd>Un agent sans LLM : il retire quand sa « pression » (peur, file, estimation des autres) dépasse un seuil.</dd>
+            <dt class="c-repli">Repli sur règle</dt><dd>Le LLM a échoué deux fois de suite (quota atteint, erreur, réponse illisible). La passerelle abandonne et la règle de l'agent décide.</dd>
+          </dl>
+          <h3>Pourquoi c'est important</h3>
+          <p>Un repli change l'expérience sans qu'on le voie : l'agent se comporte alors comme un agent à règles. Si 10 % des décisions sont des replis, 10 % du « comportement LLM » observé n'en est pas. Avant de conclure quoi que ce soit sur l'IA, il faut regarder cette part.</p>
+          <h3>Dans le code</h3>
+          <p><code>engine/moteur.py</code> (<code>_decision</code>, <code>_systeme1</code>) choisit le mode ; <code>llm/passerelle.py</code> (<code>_executer_une</code>) gère les essais et le repli.</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="qui_decide"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 2 -->
+      <section class="page" id="temps" data-court="Que s'est-il passé ?" hidden>
+        <p class="etape">Question 2</p>
+        <h1>Que s'est-il passé pendant le run ?</h1>
+        <div class="verdict" id="v-temps"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-temps" aria-label="ICC et peur au fil du run"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>De gauche à droite, le temps simulé : J1 est le premier jour, J2 le deuxième…</li>
+              <li>La <b class="c-icc">ligne bleue</b> est l'ICC : 0 = chacun pense que les autres gardent leur argent ; 1 = tout le monde s'attend à une ruée <i>et</i> tout le monde est d'accord là-dessus.</li>
+              <li>Les <b class="c-peur">points rouges</b> sont la peur moyenne que les LLM ont écrite, heure par heure (0 = calme, 1 = panique).</li>
+              <li>À regarder : la peur monte-t-elle <i>avant</i> l'ICC ? Alors les inquiétudes individuelles ont précédé la croyance collective.</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>Peur et ICC ne mesurent pas la même chose</h3>
+          <p>La <b>peur</b> est la crainte personnelle que la Caisse soit en danger. L'<b>ICC</b> (indice de contexte commun) mesure autre chose : combien d'habitants s'attendent à ce que <i>les autres</i> retirent, et à quel point ils s'accordent. On peut avoir peur seul dans son coin (ICC bas), ou être tous d'accord que personne ne bougera (ICC bas aussi).</p>
+          <p class="formule">ICC = A × C, où A = part des habitants qui pensent que plus de la moitié des autres vont retirer, et C = 1 − écart-type de ces estimations ÷ 0,5.</p>
+          <h3>Pourquoi la courbe rouge a des trous</h3>
+          <p>Elle ne compte que les heures où au moins un LLM a réfléchi. La nuit, ou quand le Système 1 décide seul, il n'y a pas de point.</p>
+          <h3>Décisions par heure</h3>
+          <figure class="graphe petit"><canvas id="g-decisions" aria-label="Décisions par heure selon qui décide"></canvas></figure>
+          <p class="aide">Les pics correspondent souvent à un événement (article de presse, ouverture des guichets) : beaucoup d'habitants ont du nouveau en même temps et le LLM est appelé en rafale. C'est là que les quotas sautent et que les replis (orange) apparaissent.</p>
+          <h3>Dans le code</h3>
+          <p><code>engine/indicateurs.py</code> (<code>icc</code>) calcule l'indice ; <code>docs/contexte_commun.md</code> le justifie.</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="serie_icc"></pre>
+          <pre data-sql="serie_peur"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 3 -->
+      <section class="page" id="calibration" data-court="Le Système 1 est-il fiable ?" hidden>
+        <p class="etape">Question 3</p>
+        <h1>Quand le Système 1 se dit sûr, a-t-il raison ?</h1>
+        <div class="verdict" id="v-calibration"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-calibration" aria-label="Probabilité annoncée par le Système 1 et retraits réels"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>Le Système 1 donne, pour chaque habitant, une probabilité qu'il retire son argent. On range les décisions en groupes selon cette probabilité (0 à 20 %, 20 à 40 %…).</li>
+              <li>La <b class="c-annonce">barre grise</b> : ce que le Système 1 a annoncé, en moyenne.</li>
+              <li>La <b class="c-llm">barre bleue</b> : la part d'habitants qui ont <i>vraiment</i> retiré.</li>
+              <li>Si les deux barres ont la même hauteur, le Système 1 est fiable. Plus l'écart est grand, moins on peut croire son chiffre.</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>Ce qu'est le Système 1</h3>
+          <p>Appeler un LLM est lent (une à plusieurs secondes) et limité par des quotas. Le Système 1 fait un premier tri, en local : s'il est sûr qu'un habitant ne retirera pas, il décide seul ; sinon (retrait possible, ou doute), il passe la main au LLM. Le nom vient de la psychologie : un Système 1 rapide et intuitif, un Système 2 lent et réfléchi.</p>
+          <h3>D'où vient sa « probabilité »</h3>
+          <p>Le moteur <b>nli</b> utilise un petit modèle de langue (mDeBERTa) qui juge si un texte « implique » une phrase. On lui donne la situation de l'habitant et deux phrases : « tu vas retirer » et « tu gardes ton argent ». Il donne un score à chacune, et une fonction appelée <i>softmax</i> transforme ces deux scores en deux nombres entre 0 et 1 dont la somme vaut 1. Ces nombres <b>ressemblent</b> à des probabilités, mais rien ne garantit qu'ils en soient : le modèle n'a jamais appris à prédire ce que ferait le LLM.</p>
+          <h3>Ce que veut dire « calibré »</h3>
+          <p>Un système est calibré quand sa confiance correspond à la réalité : sur 100 cas où il annonce 70 %, l'évènement arrive environ 70 fois. Un système très sûr de lui mais mal calibré est plus dangereux qu'un système hésitant : on le croit à tort.</p>
+          <h3>Une limite de ce graphique</h3>
+          <p>Quand le Système 1 décide seul, le LLM n'est pas appelé : on ne sait pas ce qu'il aurait fait. Pour ces décisions (le premier groupe, en général), la barre « réel » est la décision du Système 1 lui-même. Elle ne prouve donc rien.</p>
+          <h3>Dans le code</h3>
+          <p><code>engine/systeme1.py</code> (les trois moteurs : <code>regle</code>, <code>nli</code>, <code>appris</code>) et <code>engine/moteur.py</code> (<code>_systeme1</code>, qui décide de l'escalade). Les mesures complètes sont dans <code>docs/hypotheses.md</code> (H8).</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="calibration_s1"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 4 -->
+      <section class="page" id="peur" data-court="La peur est-elle mesurée ?" hidden>
+        <p class="etape">Question 4</p>
+        <h1>La peur écrite par le LLM est-elle une vraie mesure ?</h1>
+        <div class="verdict" id="v-peur"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-peur" aria-label="Valeurs de peur écrites par les LLM"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>À chaque réflexion, le LLM écrit un nombre « peur » entre 0 (calme) et 1 (panique), au centième près.</li>
+              <li>De gauche à droite : les valeurs possibles. La hauteur d'une barre : combien de fois le LLM a écrit cette valeur.</li>
+              <li>Les <b class="c-llm">barres bleues</b> sont les nombres « ronds » (0,30, 0,35, 0,40…), les grises tous les autres.</li>
+              <li>Une vraie mesure donnerait une forme régulière. Des pics sur les nombres ronds montrent que le LLM <i>choisit</i> un nombre, comme un humain qui dirait « à peu près 0,4 ».</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>Comment le LLM « produit » ce nombre</h3>
+          <p>Un LLM ne calcule pas : il écrit, morceau de mot par morceau de mot (des <i>tokens</i>). Pour chaque morceau, il donne une probabilité à toutes les suites possibles, puis on <b>tire au sort</b> parmi elles. La <i>température</i> (0,7 ici) règle ce hasard : à 0, on prend toujours la suite la plus probable ; plus elle est haute, plus la réponse varie. « 0.45 » est donc un texte tiré au sort, comme le reste de la phrase.</p>
+          <h3>Le repère du hasard</h3>
+          <p>Entre 0 et 1, au centième, il y a 101 valeurs, dont 21 multiples de 0,05. Si le LLM choisissait sans préférence, environ <b>21 %</b> des valeurs seraient des multiples de 0,05. Bien au-dessus, c'est une préférence pour les nombres ronds.</p>
+          <h3>Pourquoi c'est important</h3>
+          <p>On appelle ça une confiance <b>verbalisée</b> : un nombre que l'IA dit, pas un nombre que l'on mesure. Il reste utile pour suivre une tendance (la peur monte ou descend), mais deux valeurs proches (0,45 et 0,48) ne veulent pas dire grand-chose. Pour mesurer la vraie hésitation d'un LLM, il faut reposer la même question plusieurs fois et compter les réponses, ou lire les probabilités des tokens (<i>logprobs</i>), quand le fournisseur les donne.</p>
+          <h3>Dans le code</h3>
+          <p><code>llm/prompts.py</code> : <code>utilisateur_deposant</code> demande le nombre, <code>valider_deposant</code> vérifie qu'il est entre 0 et 1. La température est dans <code>llm/passerelle.py</code> (<code>Requete.temperature</code>).</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="peur_declaree"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 5 -->
+      <section class="page" id="ancrage" data-court="Réfléchit-il ou recopie-t-il ?" hidden>
+        <p class="etape">Question 5</p>
+        <h1>Le LLM réfléchit-il, ou recopie-t-il ce qu'on lui donne ?</h1>
+        <div class="verdict" id="v-ancrage"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-ancrage" aria-label="Peur rappelée dans le prompt et peur renvoyée"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>Chaque point est une réflexion d'un habitant. Une couleur par modèle.</li>
+              <li>De gauche à droite : la peur qu'on lui <i>rappelle</i> dans le prompt (« ton inquiétude jusqu'ici : 0,45 »).</li>
+              <li>De bas en haut : la peur qu'il <i>renvoie</i> après avoir lu les nouvelles.</li>
+              <li>Sur la <b>diagonale</b>, il a recopié le nombre. Au-dessus, sa peur a monté ; en dessous, elle a baissé. Des points collés à la diagonale : le modèle réévalue peu.</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>L'ancrage</h3>
+          <p>Un LLM n'a pas de mémoire entre deux appels : tout ce qu'il « ressent » est écrit dans le prompt. Le moteur lui rappelle donc sa peur précédente. Le risque : qu'il reprenne ce nombre au lieu de réévaluer la situation. On appelle ça l'<b>ancrage</b>, un biais connu chez les humains comme chez les LLM.</p>
+          <h3>Le chiffre utilisé : la corrélation</h3>
+          <p>La corrélation de Pearson mesure à quel point deux séries bougent ensemble, de 0 (aucun lien) à 1 (l'une suit exactement l'autre). Ici : 1 veut dire que la nouvelle peur se déduit entièrement de l'ancienne.</p>
+          <div class="table"><table>
+            <thead><tr><th>Modèle</th><th class="n">Réflexions</th><th class="n">Corrélation</th><th class="n">Variation moyenne</th></tr></thead>
+            <tbody id="t-ancrage"></tbody>
+          </table></div>
+          <h3>Pourquoi c'est important</h3>
+          <p>Une partie de la « personnalité » observée vient alors du prompt, pas du raisonnement. Une boucle peut aussi se former : la peur d'hier, réécrite un peu plus haut chaque fois, finit par monter toute seule. Pour le vérifier, on peut retirer la phrase du prompt et comparer les runs (avec <code>--etiquette</code>).</p>
+          <h3>Dans le code</h3>
+          <p><code>llm/prompts.py</code>, fonction <code>utilisateur_deposant</code> : la ligne « Ton ressenti jusqu'ici : inquiétude … ».</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="ancrage"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 6 -->
+      <section class="page" id="fiabilite" data-court="Les modèles répondent-ils ?" hidden>
+        <p class="etape">Question 6</p>
+        <h1>Les modèles répondent-ils correctement et à temps ?</h1>
+        <div class="verdict" id="v-fiabilite"></div>
+        <div class="corps">
+          <figure class="graphe"><canvas id="g-fiabilite" aria-label="Part des appels réussis par modèle"></canvas></figure>
+          <aside class="lire">
+            <h2>Comment lire ce graphique</h2>
+            <ol>
+              <li>Une barre par modèle de LLM. Sa longueur : la part des appels qui ont abouti à une réponse valide.</li>
+              <li>En <b class="c-bon">vert</b> au-dessus de 95 %, en <b class="c-repli">orange</b> entre 70 et 95 %, en <b class="c-mauvais">rouge</b> en dessous.</li>
+              <li>Un appel raté est réessayé une fois ; deux ratés, et c'est un repli sur la règle (question 1).</li>
+              <li>Le tableau dans « Comprendre en profondeur » donne la raison des échecs et le temps de réponse.</li>
+            </ol>
+          </aside>
+        </div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <div class="table"><table>
+            <thead><tr><th>Modèle</th><th>Taille</th><th class="n">Appels</th><th class="n">Réussis</th><th class="n">Refus de quota</th><th class="n">Autres erreurs</th><th class="n">Temps de réponse habituel</th><th class="n">Temps lent (1 sur 20)</th></tr></thead>
+            <tbody id="t-fiabilite"></tbody>
+          </table></div>
+          <h3>Les deux causes d'échec</h3>
+          <p><b>Le quota</b> : les fournisseurs gratuits limitent le nombre d'appels par minute et par jour (Groq : 1 000 par jour et par modèle). Quand beaucoup d'habitants réfléchissent en même temps, les appels sont refusés. <b>Les erreurs</b> : délai dépassé, serveur saturé, réponse qui n'est pas du JSON valide.</p>
+          <h3>Le temps de réponse compte aussi</h3>
+          <p>Le moteur attend les réponses quelques secondes par pas de simulation. Une réponse plus lente arrive « en retard » : elle s'applique plus tard que le moment où l'habitant a réfléchi. Le « temps habituel » est la médiane (la moitié des appels sont plus rapides) ; le « temps lent » est le 95<sup>e</sup> centile (1 appel sur 20 est encore plus lent).</p>
+          <h3>Dans le code</h3>
+          <p><code>configs/models.yaml</code> (modèles, quotas, délais) et <code>llm/passerelle.py</code> (essais, attente du quota, repli). Plus de détails dans <code>docs/README_api_key.md</code>.</p>
+          <h3>Le calcul</h3>
+          <pre data-sql="fiabilite_modeles"></pre>
+        </details>
+      </section>
+
+      <!-- ============================================================ 7 -->
+      <section class="page" id="pourquoi" data-court="Pourquoi cette décision ?" hidden>
+        <p class="etape">Question 7</p>
+        <h1>Pourquoi l'IA a-t-elle pris cette décision ?</h1>
+        <div class="verdict" id="v-pourquoi"></div>
+        <div class="filtres">
+          <label><input type="checkbox" id="f-institutions"> Seulement la direction et les employés</label>
+          <select id="f-decideur" aria-label="Qui a décidé"><option value="">Tous les décideurs</option></select>
+          <select id="f-action" aria-label="Décision"><option value="">Toutes les décisions</option></select>
+          <input id="f-texte" type="search" placeholder="Chercher un mot dans les justifications" aria-label="Chercher dans les justifications">
+        </div>
+        <p class="aide" id="f-compte"></p>
+        <div class="table haute"><table class="cliquable">
+          <thead><tr><th>Quand</th><th>Qui</th><th>Décidé par</th><th>Décision</th><th>Ce qu'il en dit</th></tr></thead>
+          <tbody id="t-fil"></tbody>
+        </table></div>
+        <details class="profondeur">
+          <summary>Comprendre en profondeur</summary>
+          <h3>Ce que vaut une justification</h3>
+          <p>Le LLM écrit sa décision et sa justification dans la même réponse, au même moment. La justification n'est donc pas la <i>cause</i> de la décision : c'est un texte plausible écrit à côté. C'est pourquoi la fiche montre aussi des faits que le LLM ne choisit pas : ce qui s'est passé juste avant, les documents qu'il avait sous les yeux, et ce que la décision a changé ensuite.</p>
+          <h3>D'où viennent ces liens</h3>
+          <p>Chaque événement de la simulation porte un identifiant et la liste des événements qui l'ont causé (<code>causes</code>). La fiche remonte ces liens dans les deux sens.</p>
+          <h3>Dans le code</h3>
+          <p><code>engine/moteur.py</code> (<code>_decision</code>) écrit la décision et ses causes ; <code>rag/memoire.py</code> choisit les souvenirs et les documents.</p>
+        </details>
+      </section>
+
+      <nav class="suite" id="suite">
+        <button id="precedent" class="bouton">← Précédent</button>
+        <button id="suivant" class="bouton principal">Question suivante →</button>
+      </nav>
+    </main>
+  </div>
+
+  <div id="fiche" class="fiche" hidden role="dialog" aria-modal="true" aria-labelledby="fiche-titre">
+    <div class="fiche-fond" data-fermer></div>
+    <article class="fiche-panneau">
+      <header><h2 id="fiche-titre">L'histoire d'une décision</h2><button class="fermer" data-fermer aria-label="Fermer">×</button></header>
+      <div id="fiche-corps"></div>
+    </article>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
