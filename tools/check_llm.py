@@ -38,6 +38,8 @@ def headers(prov: dict, key: str) -> dict:
     h = {"Content-Type": "application/json",
          # Sans User-Agent explicite, Cloudflare (devant Groq) répond 403 / 1010.
          "User-Agent": "guichet-sim/0.1"}
+    if not key:  # modèle local (Ollama) : aucune authentification
+        return h
     if prov["api"] == "gemini_native":
         h["x-goog-api-key"] = key
     else:
@@ -60,7 +62,7 @@ def request(url: str, hdrs: dict, body: dict | None = None) -> tuple[int, dict |
 
 def chat(prov: dict, key: str, m: dict) -> tuple[int, dict | str, float, str, int | str, int | str]:
     """Un appel minimal. Renvoie (code, données brutes, durée, texte, tokens entrée, tokens sortie)."""
-    base = prov["base_url"].rstrip("/")
+    base = base_url(prov)
     user = f"{SYSTEM}\n\n{PROMPT}" if m.get("system_in_user") else PROMPT
     if prov["api"] == "gemini_native":
         body = {"contents": [{"role": "user", "parts": [{"text": user}]}],
@@ -86,13 +88,25 @@ def chat(prov: dict, key: str, m: dict) -> tuple[int, dict | str, float, str, in
     return code, data, dt, text, u.get("prompt_tokens", "?"), u.get("completion_tokens", "?")
 
 
+def base_url(prov: dict) -> str:
+    """base_url du catalogue, ou la variable du .env nommée par base_env (ex. OLLAMA_URL)."""
+    return (os.environ.get(prov.get("base_env") or "") or prov["base_url"]).rstrip("/")
+
+
+def get_key(prov: dict) -> str | None:
+    """Clé du fournisseur ; chaîne vide s'il n'en demande pas (env_key: null), None si elle manque."""
+    if not prov.get("env_key"):
+        return ""
+    return os.environ.get(prov["env_key"]) or None
+
+
 def list_models(cat: dict) -> None:
     for name, prov in cat["providers"].items():
-        key = os.environ.get(prov["env_key"])
-        if not key:
+        key = get_key(prov)
+        if key is None:
             print(f"\n[{name}] clé {prov['env_key']} absente")
             continue
-        code, data, _ = request(prov["base_url"].rstrip("/") + "/models", headers(prov, key))
+        code, data, _ = request(base_url(prov) + "/models", headers(prov, key))
         print(f"\n[{name}] HTTP {code}")
         if code != 200 or not isinstance(data, dict):
             print("  ", data)
@@ -111,13 +125,17 @@ def test_models(cat: dict) -> bool:
     print(f"{'modèle':<15} {'fournisseur':<9} {'taille':>6}  {'statut':<22} {'latence':>8}  {'tokens':>9}")
     for name, m in {**cat["models"], **{f"aux:{k}": v for k, v in cat.get("auxiliary", {}).items()}}.items():
         prov = cat["providers"][m["provider"]]
-        key = os.environ.get(prov["env_key"])
+        key = get_key(prov)
         size = f"{m['params_b']}B" if "params_b" in m else "—"
-        if not key:
+        if key is None:
             print(f"{name:<15} {m['provider']:<9} {size:>6}  clé absente")
             all_ok = False
             continue
         code, data, dt, text, t_in, t_out = chat(prov, key, m)
+        if code == 0 and not prov.get("env_key"):
+            # Modèle local : Ollama n'est installé que sur le PC qui l'héberge. Ailleurs, ce n'est pas une erreur.
+            print(f"{name:<15} {m['provider']:<9} {size:>6}  Ollama absent (ignoré)")
+            continue
         if code != 200:
             print(f"{name:<15} {m['provider']:<9} {size:>6}  ÉCHEC HTTP {code:<9} {dt:7.1f}s")
             print(f"{'':<17}{str(data)[:200]}")

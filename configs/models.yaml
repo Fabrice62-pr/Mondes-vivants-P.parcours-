@@ -23,6 +23,11 @@ providers:
     base_url: https://generativelanguage.googleapis.com/v1beta
     env_key: GEMINI_API_KEY
     api: gemini_native
+  local:                              # Ollama sur ce PC, via son interface compatible OpenAI
+    base_url: http://127.0.0.1:11434/v1
+    base_env: OLLAMA_URL              # si défini dans .env, remplace base_url
+    env_key: null                     # aucune clé
+    api: openai
 
 # params_b : taille PUBLIÉE (paramètres totaux, en milliards). C'est elle qui fonde l'hypothèse A5
 # (taille du modèle = capacité cognitive). Pour un modèle « mixture of experts » (moe: true), on indique
@@ -77,6 +82,15 @@ models:
     json: true
     timeout_s: 30
     limites: { rpm: 180, tpm: 600000 }
+  qwen2.5-7b-local:
+    provider: local
+    id: qwen2.5:7b                    # nom dans Ollama (ollama pull qwen2.5:7b)
+    params_b: 7.6
+    tier: petit
+    max_tokens: 300
+    json: true
+    timeout_s: 60                     # un seul GPU : les requêtes font la queue
+    limites: { rpm: 40 }              # pas de quota, mais on évite d'empiler les requêtes sur le GPU
 
 # Modèle auxiliaire : il n'est JAMAIS attribué à un agent (aucun agent ne change de modèle).
 # Il sert aux tâches d'analyse, par exemple classer les messages pour l'indicateur de contexte commun.

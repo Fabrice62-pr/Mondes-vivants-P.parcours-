@@ -336,8 +336,9 @@ moteur + passerelle (PC 1)                                        travailleur LL
 ### 6.2 Le serveur de modèle : Ollama
 
 - **Ollama** (gratuit, installeur Windows) sert le modèle sur le GPU NVIDIA. Le travailleur utilise son
-  **API native** (`POST /api/chat`), qui accepte une graine (`seed`), le format JSON et la désactivation
-  du mode « réflexion » (`think: false`). L'appel est dans `llm/local.py`.
+  **API compatible OpenAI** (`POST /v1/chat/completions`), comme pour Groq et Mistral : la passerelle
+  existante l'appelle sans code supplémentaire (fournisseur `local`, sans clé). Cette interface accepte
+  aussi une graine (`seed`) et le format JSON.
 - Ollama écoute sur **`127.0.0.1:11434` seulement**. Il n'est **pas** ouvert sur le réseau : seul le
   travailleur, sur la même machine, l'appelle.
 - Réglages à mettre dans les variables d'environnement Windows du PC qui l'héberge :
@@ -348,17 +349,19 @@ moteur + passerelle (PC 1)                                        travailleur LL
 **Le choix du modèle** doit respecter les règles du catalogue :
 
 - une **taille publiée** (hypothèse A5) ; sinon il ne peut être attribué à aucun agent ;
-- il doit tenir dans la mémoire vidéo disponible, en version quantifiée Q4 (environ 5 Go pour 8 milliards
+- il doit tenir dans la mémoire vidéo disponible, en version quantifiée Q4 (environ 5 Go pour 7 à 8 milliards
   de paramètres) ;
 - il doit produire un **JSON valide** de façon fiable, en français.
 
-| Candidat (à vérifier avec `tools/check_llm.py`) | Taille publiée | Mémoire vidéo (Q4) | Remarque |
-|---|---|---|---|
-| Qwen3 8B | 8,2 Md | ~5,5 Go | Bon en JSON ; désactiver le mode « réflexion » (`think: false`) |
-| Llama 3.1 8B Instruct | 8 Md | ~5 Go | Llama n'est plus servi par Groq : le local le réintroduit dans l'étude |
-| Gemma 3 4B / Qwen3 4B | ~4 Md | ~3 Go | Si le GPU du PC hôte a moins de 6 Go |
+**Modèle retenu : Qwen2.5 7B Instruct** (`qwen2.5:7b` dans Ollama). Il est installé sur le PC
+d'Ibrahim et vérifié avec `tools/check_llm.py` le 10/11/2026 : JSON valide en français.
 
-> **Intérêt pour l'étude :** un modèle d'environ 8 milliards de paramètres, local, se compare
+| Modèle | Taille publiée | Mémoire vidéo (Q4) | Remarque |
+|---|---|---|---|
+| **Qwen2.5 7B** (retenu) | 7,6 Md | ~4,7 Go | Bon en JSON ; pas de mode « réflexion » à désactiver |
+| Llama 3.1 8B Instruct (repli) | 8 Md | ~5 Go | Llama n'est plus servi par Groq : le local le réintroduirait dans l'étude |
+
+> **Intérêt pour l'étude :** un modèle d'environ 7 à 8 milliards de paramètres, local, se compare
 > directement à `ministral-8b`, qui a la même taille mais tourne en ligne. Les deux ne diffèrent que par
 > le fournisseur et la latence : c'est une bonne paire pour isoler l'effet de la latence (H2) de celui de
 > la taille (A5, H4).
@@ -369,23 +372,24 @@ Dans [configs/models.yaml](../configs/models.yaml) :
 
 ```yaml
 providers:
-  local:
-    base_url: http://127.0.0.1:11434      # Ollama (OLLAMA_URL dans .env a priorité)
+  local:                                  # déjà en place
+    base_url: http://127.0.0.1:11434/v1   # Ollama, interface compatible OpenAI
+    base_env: OLLAMA_URL                  # si défini dans .env, remplace base_url
     env_key: null                         # aucune clé
-    api: ollama
-    transport: kafka                      # kafka | http (voir ci-dessous)
+    api: openai
+    transport: kafka                      # à ajouter : kafka | http (voir ci-dessous)
 
 models:
-  qwen3-8b-local:
+  qwen2.5-7b-local:                       # déjà en place
     provider: local
-    id: qwen3:8b                          # nom du modèle dans Ollama (ollama pull qwen3:8b)
-    params_b: 8.2
+    id: qwen2.5:7b                        # nom du modèle dans Ollama (ollama pull qwen2.5:7b)
+    params_b: 7.6
     tier: petit
     max_tokens: 300
     json: true
-    timeout_s: 20                         # inclut l'aller-retour Kafka et la file d'attente du GPU
+    timeout_s: 60                         # inclut l'aller-retour Kafka et la file d'attente du GPU
     limites: { rpm: 40 }                  # pas de quota, mais un seul GPU : on évite d'empiler les requêtes
-    options: { seed_par_run: true }       # graine fixée à partir de celle du run (§ 6.7)
+    options: { seed_par_run: true }       # à ajouter : graine fixée à partir de celle du run (§ 6.7)
 ```
 
 Dans [configs/principal.yaml](../configs/principal.yaml), une part des agents « petit modèle » lui est
@@ -393,7 +397,7 @@ attribuée :
 
 ```yaml
 population:
-  repartition_petits: { ministral-8b: 0.60, gpt-oss-20b: 0.15, qwen3-8b-local: 0.25 }
+  repartition_petits: { ministral-8b: 0.60, gpt-oss-20b: 0.15, qwen2.5-7b-local: 0.25 }
 ```
 
 **Les deux transports.** La variable `LLM_LOCAL_TRANSPORT` du `.env` du PC 1 choisit le chemin :
@@ -422,7 +426,7 @@ différence.
 
 | Élément | Contenu |
 |---|---|
-| `schemas/llm.requested/v1.json` | `requete_id` (un par essai), `modele`, `systeme`, `utilisateur`, `temperature`, `max_tokens`, `json`, `graine`, `think`, `delai_ms` |
+| `schemas/llm.requested/v1.json` | `requete_id` (un par essai), `modele`, `systeme`, `utilisateur`, `temperature`, `max_tokens`, `json`, `graine`, `delai_ms` |
 | `schemas/llm.status/v1.json` | `modele`, `pret`, `en_cours`, `traitees`, `expirees` (battement du travailleur) |
 | `schemas/llm.completed/v1.json` | `requete_id`, `statut` (`ok` \| `erreur` \| `expire`), `texte`, `tokens_entree`, `tokens_sortie`, `latence_modele_ms`, `erreur` |
 | `schemas/llm.called/v1.json` | Ajouter `local` aux valeurs de `fournisseur` ; champ facultatif `latence_modele_ms` |
@@ -462,7 +466,7 @@ Le comportement suit celui d'une clé API absente aujourd'hui :
 - **Reproductibilité :** contrairement aux API en ligne, Ollama accepte une **graine** (`seed`). En la
   dérivant de la graine du run et de l'`agent_id`, les réponses du modèle local deviennent beaucoup plus
   stables d'un run à l'autre. C'est à signaler dans [docs/hypotheses.md](hypotheses.md).
-- **Débit :** un seul GPU traite environ 30 à 50 tokens par seconde pour un modèle de 8 milliards. Avec
+- **Débit :** un seul GPU traite environ 30 à 50 tokens par seconde pour un modèle de 7 à 8 milliards. Avec
   `OLLAMA_NUM_PARALLEL=2`, compter 3 à 6 secondes par réponse. Il faut limiter la part des agents locaux
   (25 % des petits modèles pour commencer) et la mesurer au premier test de charge.
 - **Coût (E4, E5) :** 0 € et aucun quota, mais les tokens et la latence sont comptés comme pour les
@@ -550,7 +554,7 @@ seconde, la mesure est fausse d'une seconde.
 | `POSTGRES_PASSWORD`, `POSTGRES_URL` | **oui** | — |
 | `LLM_LOCAL_TRANSPORT` | `kafka` (ou `http` en mode local) | — |
 | `LLM_LOCAL` | `0` | `1` : ce PC démarre le travailleur LLM local |
-| `OLLAMA_URL`, `LLM_LOCAL_MODELE` | — | `http://127.0.0.1:11434`, `qwen3:8b` |
+| `OLLAMA_URL`, `LLM_LOCAL_MODELE` | — | `http://127.0.0.1:11434/v1`, `qwen2.5:7b` |
 | `GUICHET_ROLE` | `serveur` | `pilotage` |
 | `GODOT_EXE` | — | chemin de Godot sur ce PC |
 
@@ -601,8 +605,8 @@ rester ouvert).
 4. **PC qui héberge le modèle local (PC 2 par défaut) :** installer Ollama, régler
    `OLLAMA_NUM_PARALLEL` et `OLLAMA_KEEP_ALIVE` (§ 6.2), puis télécharger le modèle **avant** la séance :
    ```powershell
-   ollama pull qwen3:8b
-   ollama run qwen3:8b "Réponds en JSON : {\"ok\": true}"     # premier essai sur le GPU
+   ollama pull qwen2.5:7b
+   ollama run qwen2.5:7b "Réponds en JSON : {\"ok\": true}"     # premier essai sur le GPU
    ```
 
 ### À chaque séance
@@ -642,7 +646,7 @@ rester ouvert).
 | Incident « modèle local indisponible » | Travailleur non démarré, ou Ollama fermé | `LLM_LOCAL=1` dans le `.env` du bon PC ; `ollama list` ; battements `llm.status` dans `guichet.llm.responses` |
 | Des `llm.requested` sans `llm.completed` | Le travailleur n'est pas abonné, ou rejette des requêtes expirées | Journal du travailleur ; vérifier l'heure des deux PC (§ 7.5) |
 | Beaucoup de `timeout` sur le modèle local | GPU saturé : trop d'agents locaux ou modèle déchargé | Réduire sa part dans `repartition_petits` ; `OLLAMA_KEEP_ALIVE=-1` ; vérifier qu'Ollama utilise bien le GPU (`ollama ps`) |
-| `json_invalide` fréquents sur le modèle local | Modèle trop petit ou mode « réflexion » actif | `json: true` dans le catalogue ; `think: false` pour Qwen3 ; essayer un autre candidat (§ 6.2) |
+| `json_invalide` fréquents sur le modèle local | Modèle trop petit ou consigne mal suivie | `json: true` dans le catalogue ; essayer le modèle de repli (§ 6.2) |
 
 ---
 
@@ -680,8 +684,7 @@ Chacun développe et teste **en mode local** sur son PC. On ne passe à deux PC 
 - [ ] Quel PC est le serveur, c'est-à-dire lequel a le meilleur GPU NVIDIA ?
 - [ ] Sur quel PC tourne le modèle local : PC 2 (recommandé, § 1.1) ou PC 1 ? Cela dépend de la mémoire
       vidéo de la carte du binôme.
-- [ ] Quel modèle local (§ 6.2) : Qwen3 8B, Llama 3.1 8B, ou un modèle de 4 milliards si le GPU est
-      limité ?
+- [x] Quel modèle local (§ 6.2) : **Qwen2.5 7B** (`qwen2.5:7b`).
 - [ ] Quelle part des agents « petit modèle » lui attribuer (25 % pour commencer) ?
 - [ ] Le classifieur auxiliaire passe-t-il de Google au modèle local (§ 6.7) ?
 - [ ] Sur quel réseau se fera la soutenance : partage de connexion, câble ou Wi-Fi de l'école ?

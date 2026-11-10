@@ -34,6 +34,8 @@ class Reponse:
 
 def _entetes(api: str, cle: str) -> dict:
     h = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
+    if not cle:                       # modèle local (Ollama) : aucune authentification
+        return h
     if api == "gemini_native":
         h["x-goog-api-key"] = cle
     else:
@@ -77,15 +79,20 @@ class Fournisseur:
     def __init__(self, nom: str, cfg: dict):
         self.nom = nom
         self.api = cfg["api"]
-        self.base = cfg["base_url"].rstrip("/")
-        self.env_key = cfg["env_key"]
+        self._base = cfg["base_url"].rstrip("/")
+        self.base_env = cfg.get("base_env")   # variable du .env qui remplace base_url (ex. OLLAMA_URL)
+        self.env_key = cfg.get("env_key")     # None : fournisseur sans clé (modèle local)
+
+    @property
+    def base(self) -> str:
+        return (os.environ.get(self.base_env or "") or self._base).rstrip("/")
 
     def disponible(self) -> bool:
-        return bool(os.environ.get(self.env_key))
+        return self.env_key is None or bool(os.environ.get(self.env_key))
 
     def appeler(self, modele: dict, systeme: str, utilisateur: str, temperature: float, delai_s: float) -> Reponse:
-        cle = os.environ.get(self.env_key, "")
-        if not cle:
+        cle = os.environ.get(self.env_key, "") if self.env_key else ""
+        if self.env_key and not cle:
             return Reponse(0, erreur=f"clé {self.env_key} absente de .env")
         max_tokens = int(modele.get("max_tokens", 400))
         if modele.get("system_in_user"):
