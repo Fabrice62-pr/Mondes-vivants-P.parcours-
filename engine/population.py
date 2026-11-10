@@ -29,8 +29,18 @@ def _quotas(n: int, repartition: dict) -> list[str]:
     return [m for m in noms for _ in range(base[m])]
 
 
-def construire(cfg: dict, monde: Monde, modeles: dict, rng: random.Random):
-    """Renvoie (déposants, employé, direction)."""
+def repartition_effective(repartition: dict, exclus: set) -> dict:
+    """Retire les modèles exclus (modèle local injoignable) et redistribue leur part aux autres,
+    au prorata. Si tous sont exclus, la répartition d'origine est gardée (incidents habituels)."""
+    reste = {m: p for m, p in repartition.items() if m not in exclus}
+    total = sum(reste.values())
+    if not reste or total <= 0:
+        return dict(repartition)
+    return {m: p / total for m, p in reste.items()}
+
+
+def construire(cfg: dict, monde: Monde, modeles: dict, rng: random.Random, exclus: set = frozenset()):
+    """Renvoie (déposants, employé, direction). `exclus` : petits modèles à ne pas attribuer pour ce run."""
     pop = cfg["population"]
     llm_actif = cfg["llm"].get("actif", False)
     principaux_en_regles = cfg.get("personnages_principaux_en_regles", False) or not llm_actif
@@ -93,7 +103,7 @@ def construire(cfg: dict, monde: Monde, modeles: dict, rng: random.Random):
     for profil in ORDRE_PROFILS:
         groupe = [a for a in ordinaires if a.profil == profil and a.id not in a_regles]
         if llm_actif:
-            places = _quotas(len(groupe), pop["repartition_petits"])
+            places = _quotas(len(groupe), repartition_effective(pop["repartition_petits"], exclus))
             rng.shuffle(places)
         else:
             places = [None] * len(groupe)

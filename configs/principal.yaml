@@ -27,7 +27,9 @@ population:
   # Répartition des agents « petit modèle » entre fournisseurs. C'est un choix de charge, pas un
   # choix cognitif : le tirage est équilibré à l'intérieur de chaque profil.
   # Mistral absorbe le volume (188 req/min) ; Groq est limité à 1 000 req/jour par modèle.
-  repartition_petits: { ministral-8b: 0.80, gpt-oss-20b: 0.20 }
+  # qwen2.5-7b-local tourne sur Ollama (PC hôte du modèle, OLLAMA_URL dans .env). S'il ne répond pas au
+  # démarrage du run, sa part est répartie entre les autres petits modèles (engine/moteur.py).
+  repartition_petits: { ministral-8b: 0.60, gpt-oss-20b: 0.15, qwen2.5-7b-local: 0.25 }
 
 # Profils des déposants ordinaires (repris de la maquette Godot). part = proportion dans la population ;
 # les intervalles [a, b] sont tirés uniformément. Le profil « prudent » complète à 100 %.

@@ -4,7 +4,7 @@ from collections import Counter
 
 from engine.config import charger_config, charger_modeles, charger_monde
 from engine.monde import Monde
-from engine.population import construire
+from engine.population import construire, repartition_effective
 
 
 def _pop(cfg, graine=1):
@@ -43,7 +43,24 @@ def test_attribution_des_modeles():                # A5
     assert employe.modele == "gpt-oss-120b" and direction.modele == "gemma-31b"
     petits = Counter(a.modele for a in deposants if a.tier == "petit")
     total = sum(petits.values())
-    assert abs(petits["ministral-8b"] / total - 0.80) < 0.05
+    attendu = cfg_llm_repartition()["ministral-8b"]
+    assert abs(petits["ministral-8b"] / total - attendu) < 0.05
+
+
+def cfg_llm_repartition():
+    return _cfg_llm()["population"]["repartition_petits"]
+
+
+def test_modele_local_absent_redistribue():
+    # Ollama injoignable : sa part est répartie entre les autres petits modèles, avant l'attribution.
+    cfg = _cfg_llm()
+    exclus = {m for m in cfg["population"]["repartition_petits"] if m.endswith("-local")}
+    deposants = construire(cfg, Monde(charger_monde()), charger_modeles(), random.Random("population-1"),
+                           exclus)[0]
+    petits = {a.modele for a in deposants if a.tier == "petit"}
+    assert petits and not petits & exclus
+    r = repartition_effective({"a": 0.6, "b": 0.15, "c": 0.25}, {"c"})
+    assert set(r) == {"a", "b"} and abs(r["a"] - 0.8) < 1e-9 and abs(r["b"] - 0.2) < 1e-9
 
 
 def test_attribution_figee_par_la_graine():

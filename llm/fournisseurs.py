@@ -90,6 +90,17 @@ class Fournisseur:
     def disponible(self) -> bool:
         return self.env_key is None or bool(os.environ.get(self.env_key))
 
+    def joignable(self, delai_s: float = 2.0) -> bool:
+        """Le serveur répond-il ? Sert au modèle local (Ollama), vérifié une fois au démarrage du run."""
+        if not hasattr(self, "_joignable"):
+            req = urllib.request.Request(f"{self.base}/models", headers={"User-Agent": USER_AGENT})
+            try:
+                with urllib.request.urlopen(req, timeout=delai_s) as r:
+                    self._joignable = r.status == 200
+            except Exception:
+                self._joignable = False
+        return self._joignable
+
     def appeler(self, modele: dict, systeme: str, utilisateur: str, temperature: float, delai_s: float) -> Reponse:
         cle = os.environ.get(self.env_key, "") if self.env_key else ""
         if self.env_key and not cle:

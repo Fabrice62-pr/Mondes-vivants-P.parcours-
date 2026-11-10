@@ -13,8 +13,9 @@ regroupées pour tenir dans les 8 semaines du sujet.
 | 3 | Godot devient la vue : bridge WebSocket, HUD, inspection, leviers, lancement en un clic | ✅ |
 | 4 | Lisibilité (déplacements, journal, domiciles), sources de l'ICC dans Godot (B4, F6), comparaison des runs | ✅ (validation à l'écran en attente) |
 | 5 | Passerelle LLM et agents LLM (grands et petits modèles, repli sur les règles, quotas, incidents) | ✅ (validation à l'écran en attente) |
-| 6 | Mémoire des agents et RAG (Chroma, embeddings locaux), mémoire visible dans l'inspection (D2) | ✅ (validation à l'écran en attente) |
+| 6 | Mémoire des agents et RAG (Chroma, remplacé le 27/10 par PostgreSQL + pgvector), embeddings locaux, mémoire visible dans l'inspection (D2) | ✅ (validation à l'écran en attente) |
 | 7 | Mode asynchrone (C4), rejeu d'un run (E3), archiveur DuckDB/Parquet, service d'indicateurs | ✅ (validation à l'écran en attente) |
+| 7 bis | Distribution sur deux PC : bridge FastAPI, PostgreSQL, hybride, modèle local Qwen2.5 7B partagé par Tailscale (`docs/Distribution.md`) | En cours |
 | 8 | Campagne d'expériences (H1 à H7, au moins 10 runs par scénario), coût (E5, O7), rapport, soutenance | |
 
 ## Correspondance avec l'ancien plan

@@ -1,9 +1,20 @@
 # Distribution de GUICHET sur deux PC
 
-> **Statut : plan de travail, rien n'est encore implémenté.** Ce document décrit l'état cible et la
-> marche à suivre. Il intègre les quatre modifications prévues : le bridge en **FastAPI**, la mémoire des
-> agents dans **PostgreSQL**, le traitement **hybride** synchrone/asynchrone, et un **modèle LLM local**
-> qui s'ajoute aux LLM en ligne (Groq, Mistral, Google).
+> **Statut au 10/11/2026 : en partie réalisé.** Ce document décrit l'état cible et la marche à suivre. Il
+> intègre les quatre modifications prévues : le bridge en **FastAPI**, la mémoire des agents dans
+> **PostgreSQL**, le traitement **hybride** synchrone/asynchrone, et un **modèle LLM local** qui s'ajoute
+> aux LLM en ligne (Groq, Mistral, Google).
+>
+> | Élément | État |
+> |---|---|
+> | Bridge FastAPI (§ 3.1) | ✅ fait (`services/bridge.py`) |
+> | Mémoire des agents dans PostgreSQL + pgvector (§ 4) | ✅ fait (`rag/memoire.py`, `rag/schema.sql`) |
+> | Traitement hybride (§ 5) | ✅ fait, c'est le seul mode |
+> | Modèle local Qwen2.5 7B, appelé **en HTTP direct** (§ 6.0) | ✅ fait : catalogue, passerelle, schéma `llm.called`, redistribution si Ollama est absent |
+> | Partage du modèle local entre les deux PC par **Tailscale** (§ 7.0) | ✅ en place et testé |
+> | Lanceur (§ 3.2), topic `guichet.runs`, rôles de `lancer.ps1` (§ 8) | ❌ à faire |
+> | Travailleur Kafka `services/llm_local.py` (§ 6.4) | ❌ à faire (le HTTP direct le remplace pour l'instant) |
+> | Listener Kafka `RESEAU` (§ 7.3) | ❌ à faire |
 
 ---
 
@@ -87,8 +98,8 @@ communiquent que par Kafka :
 > **Règle importante :** le mode **local** (tout sur un seul PC) doit continuer de fonctionner. C'est
 > celui qu'on utilise pour développer et pour les tests ; le mode à deux PC sert à l'intégration et à la
 > démonstration. Toute adresse vient du fichier `.env`, jamais du code. Le moteur doit aussi pouvoir
-> tourner **sans** modèle local : les agents qui lui sont attribués décident alors par règles, avec un
-> incident (§ 6.6).
+> tourner **sans** modèle local : sa part est alors répartie entre les autres petits modèles au démarrage
+> du run (§ 6.6).
 
 ---
 
@@ -308,6 +319,28 @@ exact, car il republie les événements enregistrés sans appeler les LLM.
 
 ## 6. Modification n° 4 : le modèle LLM local (PC 2 par défaut)
 
+### 6.0 Ce qui tourne aujourd'hui : l'appel HTTP direct
+
+En attendant le travailleur Kafka (§ 6.4), la passerelle appelle Ollama **directement en HTTP**, comme
+un fournisseur en ligne :
+
+```
+PC qui lance la simulation                         PC hôte (IP_TAILSCALE_HOTE)
+passerelle LLM ── POST /v1/chat/completions ──►    Ollama + qwen2.5:7b (RTX 4060)
+             ◄── réponse JSON ──────────────────
+```
+
+- **Sur le PC hôte**, pas de `OLLAMA_URL` dans le `.env` : la passerelle appelle
+  `http://127.0.0.1:11434/v1`.
+- **Sur le PC du binôme**, `OLLAMA_URL=http://IP_TAILSCALE_HOTE:11434/v1` dans le `.env`. Ollama n'a pas
+  besoin d'y être installé.
+- Le `llm.called` de chaque appel part dans `guichet.llm.responses` avec `fournisseur: local`, comme
+  pour les autres fournisseurs.
+- Réglage réseau et sécurité : § 7.0.
+
+Le travailleur Kafka (§ 6.1 à 6.5) reste la cible pour la démonstration : il montre l'architecture par
+événements, et Ollama n'y est plus exposé sur le réseau.
+
 ### 6.1 Le principe
 
 Le modèle local est un **fournisseur de plus** dans le catalogue, au même titre que Groq, Mistral et
@@ -354,7 +387,7 @@ moteur + passerelle (PC 1)                                        travailleur LL
 - il doit produire un **JSON valide** de façon fiable, en français.
 
 **Modèle retenu : Qwen2.5 7B Instruct** (`qwen2.5:7b` dans Ollama). Il est installé sur le PC
-d'Ibrahim et vérifié avec `tools/check_llm.py` le 10/11/2026 : JSON valide en français.
+hôte et vérifié avec `tools/check_llm.py` le 10/11/2026 : JSON valide en français.
 
 | Modèle | Taille publiée | Mémoire vidéo (Q4) | Remarque |
 |---|---|---|---|
@@ -453,13 +486,20 @@ chacune sur une seule horloge : l'écart d'horloge entre les PC (§ 7.5) ne les 
 
 ### 6.6 Si le modèle local n'est pas disponible
 
-Le comportement suit celui d'une clé API absente aujourd'hui :
+**Au démarrage du run** (déjà en place, `engine/moteur.py`) : le moteur vérifie en 2 secondes qu'Ollama
+répond (`OLLAMA_URL`). Sinon, la part du modèle local dans `repartition_petits` est répartie entre les
+autres petits modèles, au prorata, **avant** l'attribution. Un PC sans Ollama lance donc la même
+configuration sans erreur. Aucun agent ne change de modèle en cours de run (A5) ; la table d'attribution
+de `run.started` montre la répartition réellement utilisée. Pour comparer deux runs, vérifier qu'ils ont
+la même répartition.
+
+**En cours de run** (Ollama fermé ou PC éteint après le démarrage), le comportement suit celui d'une clé
+API absente :
 
 - les agents attribués au modèle local décident **par règles** ;
-- un seul incident `erreur_api` est publié (« modèle local indisponible : travailleur absent »), puis les
-  suivants sont comptés sans être republiés ;
-- le run continue. On ne réattribue **jamais** ces agents à un modèle en ligne, ce qui casserait A5 et la
-  comparaison entre runs.
+- un incident `erreur_api` est publié ;
+- le run continue. On ne réattribue **jamais** ces agents à un modèle en ligne en cours de run, ce qui
+  casserait A5.
 
 ### 6.7 Points d'attention
 
@@ -480,6 +520,52 @@ Le comportement suit celui d'une clé API absente aujourd'hui :
 ---
 
 ## 7. Configuration réseau
+
+### 7.0 Tailscale : le « même réseau » où que l'on soit (en place)
+
+Les deux PC sont reliés par **Tailscale**, un réseau privé chiffré qui fonctionne comme un Wi-Fi commun,
+même chez soi ou sur le Wi-Fi de l'école. Les adresses `100.x` ne changent pas d'une séance à l'autre.
+
+| PC | Nom Tailscale | Adresse |
+|---|---|---|
+| PC hôte du modèle (Ollama + Qwen) | `<nom-pc-hote>` | `IP_TAILSCALE_HOTE` (ex. `100.64.0.1`) |
+| PC du binôme | `<nom-pc-binome>` | `IP_TAILSCALE_BINOME` (ex. `100.64.0.2`) |
+
+Les vraies adresses ne sont **pas** écrites dans le dépôt. Chacun lit la sienne avec `tailscale ip -4`,
+et celle de l'autre avec `tailscale status`. Remplacer `IP_TAILSCALE_HOTE` et `IP_TAILSCALE_BINOME` par
+ces adresses dans les commandes ci-dessous et dans le `.env` (jamais commité).
+
+**Mise en place (déjà faite) :**
+
+1. La machine hôte du modèle est **partagée** avec le compte du binôme (console Tailscale → Machines → Share).
+2. Règle d'accès Tailscale (Access controls) : le binôme ne peut joindre **que** le port d'Ollama.
+   ```json
+   "grants": [
+     {"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+     {"src": ["autogroup:shared"], "dst": ["IP_TAILSCALE_HOTE"], "ip": ["tcp:11434"]},
+   ],
+   ```
+3. Sur le PC hôte (PowerShell en administrateur) :
+   ```powershell
+   setx OLLAMA_HOST "0.0.0.0:11434"
+   setx OLLAMA_KEEP_ALIVE "-1"
+   setx OLLAMA_NUM_PARALLEL "4"      # repasser à 2 si la mémoire GPU sature (ollama ps)
+   New-NetFirewallRule -DisplayName "Ollama GUICHET" -Direction Inbound -Protocol TCP -LocalPort 11434 `
+       -Action Allow -RemoteAddress IP_TAILSCALE_BINOME -Profile Any
+   ```
+   puis quitter et relancer Ollama.
+
+**Vérifications :**
+- depuis le PC du binôme : `curl http://IP_TAILSCALE_HOTE:11434/api/tags` doit lister `qwen2.5:7b` ;
+- sur le PC hôte, les requêtes reçues s'affichent avec
+  `Get-Content "$env:LOCALAPPDATA\Ollama\server.log" -Wait | Select-String "IP_TAILSCALE_BINOME"`.
+
+**Sécurité :** Ollama n'a pas de mot de passe ; deux verrous limitent l'accès au seul binôme (règle
+Tailscale et pare-feu Windows). Garder Ollama à jour. Quand le travailleur Kafka existera (§ 6.4), Ollama
+pourra revenir sur `127.0.0.1` et la règle s'appliquera alors au port de Kafka (9094) au lieu de 11434.
+
+Les sections suivantes (7.1 à 7.7) décrivent le mode à deux PC complet, par Kafka. Avec Tailscale, on
+utilise les adresses `100.x` à la place des `192.168.x.x`.
 
 ### 7.1 Le réseau
 
@@ -682,12 +768,11 @@ Chacun développe et teste **en mode local** sur son PC. On ne passe à deux PC 
 ## 12. Décisions encore ouvertes
 
 - [ ] Quel PC est le serveur, c'est-à-dire lequel a le meilleur GPU NVIDIA ?
-- [ ] Sur quel PC tourne le modèle local : PC 2 (recommandé, § 1.1) ou PC 1 ? Cela dépend de la mémoire
-      vidéo de la carte du binôme.
+- [x] Sur quel PC tourne le modèle local : le **PC hôte** (RTX 4060, 8 Go).
 - [x] Quel modèle local (§ 6.2) : **Qwen2.5 7B** (`qwen2.5:7b`).
-- [ ] Quelle part des agents « petit modèle » lui attribuer (25 % pour commencer) ?
+- [x] Quelle part des agents « petit modèle » lui attribuer : **25 %** pour commencer (`configs/principal.yaml`).
 - [ ] Le classifieur auxiliaire passe-t-il de Google au modèle local (§ 6.7) ?
-- [ ] Sur quel réseau se fera la soutenance : partage de connexion, câble ou Wi-Fi de l'école ?
+- [x] Le réseau entre les deux PC : **Tailscale** (§ 7.0), quel que soit le Wi-Fi de la soutenance.
 - [ ] Hybride : une échéance seule (§ 5.1), ou aussi des voies imposées par catégorie d'agent ?
 - [ ] Le carnet reste-t-il en mémoire Python, comme recommandé (§ 4.4) ?
 - [ ] Les souvenirs doivent-ils être conservés indéfiniment dans PostgreSQL, ou purgés au-delà de N runs ?

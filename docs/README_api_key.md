@@ -13,13 +13,14 @@ aux agents.
 La contrainte G du sujet impose des **LLM 100 % gratuits, par API ou en local**. L'API Claude, utilisée
 par la maquette d'origine (`guichet/proxy/server.py`), est payante et a donc été abandonnée.
 
-Trois fournisseurs aux offres gratuites sont utilisés **en parallèle** :
+Trois fournisseurs aux offres gratuites sont utilisés **en parallèle**, plus un modèle **local** :
 
 | Fournisseur | Console pour créer la clé | Offre | Type d'API utilisée |
 |---|---|---|---|
 | **Groq** | https://console.groq.com/keys | gratuite | compatible OpenAI |
 | **Mistral** | https://console.mistral.ai/api-keys | gratuite « Experiment » | compatible OpenAI |
 | **Google AI Studio** (Gemini, Gemma) | https://aistudio.google.com/apikey | gratuite | **native Gemini** (`generateContent`) |
+| **Local** (Ollama, `qwen2.5:7b`) | aucune clé : `ollama pull qwen2.5:7b` | gratuit, sur le GPU du PC hôte du modèle | compatible OpenAI (`/v1`) ; adresse dans `OLLAMA_URL` (voir `docs/Distribution.md`, § 6.0) |
 
 Les combiner apporte plus de quota au total et une offre variée de tailles de modèles (A5).
 
@@ -136,6 +137,7 @@ taille représente la capacité cognitive.
 | `gemma-31b` | `gemma-4-31b-it` | Google | **grand** | 31 milliards (dense) | 28 à 46 s | ✅ |
 | `gpt-oss-20b` | `openai/gpt-oss-20b` | Groq | **petit** | 21 milliards (MoE, 3,6 actifs) | 0,3 à 0,7 s | ✅ |
 | `ministral-8b` | `ministral-8b-2512` | Mistral | **petit** | 8 milliards (dense) | 0,7 à 0,9 s | ✅ |
+| `qwen2.5-7b-local` | `qwen2.5:7b` | Local (Ollama) | **petit** | 7,6 milliards (dense) | 3 à 4 s (15 s au chargement) | ✅ |
 | `aux:classifier` | `gemini-flash-lite-latest` | Google | auxiliaire | non publiée | 35 à 71 s | ✅ |
 
 **Le modèle auxiliaire n'est attribué à aucun agent.** Il ne sert qu'à l'analyse, par exemple pour
@@ -165,7 +167,7 @@ Relevés le 13 octobre 2026 dans les en-têtes de réponse `x-ratelimit-*`. Les 
 | Usage | Estimation | Conséquence |
 |---|---|---|
 | Personnages principaux (gpt-oss-120b) | ~250 à 350 appels par run | **Environ 2 à 3 runs complets par jour** |
-| Petits modèles (~105 déposants LLM) | ~3 000 appels par run, dont environ 80 % sur Mistral | Mistral suffit ; gpt-oss-20b est limité à environ 1 run par jour avec sa part de 20 % |
+| Petits modèles (~105 déposants LLM) | ~3 000 appels par run : 60 % Mistral, 15 % gpt-oss-20b, 25 % local | Mistral suffit ; le modèle local n'a pas de quota mais un seul GPU (`rpm: 40`) |
 | 8 000 tokens par minute sur Groq | ~1 000 tokens par appel avec mémoire et RAG | **Environ 8 appels par minute** par modèle Groq : la passerelle devra limiter le débit |
 | Configuration E5 « tous sur le grand modèle » | impossible à 140 déposants | À faire tourner à **population réduite** (par exemple 40), en le justifiant (E2) |
 
@@ -183,7 +185,7 @@ Source : `configs/principal.yaml`.
 | L'entrepreneur | déposant | gpt-oss-120b | Gère la trésorerie d'une entreprise et suit l'actualité économique |
 | L'employé d'agence | employé | gpt-oss-120b | Rôle institutionnel : informe les clients au guichet |
 | La direction | direction | gemma-31b | Rôle institutionnel : communiqués et mesures. Elle fait peu d'appels, donc la latence de Google est acceptable |
-| Déposants ordinaires LLM (~75 %) | déposants | 80 % ministral-8b, 20 % gpt-oss-20b | Reçoivent et relaient l'information sans responsabilité particulière |
+| Déposants ordinaires LLM (~75 %) | déposants | 60 % ministral-8b, 15 % gpt-oss-20b, 25 % qwen2.5-7b-local (réparti entre les deux autres si Ollama ne répond pas au démarrage) | Reçoivent et relaient l'information sans responsabilité particulière |
 | Déposants à règles (~25 %) | déposants | aucun | Les moins exposés à l'information (A6, sobriété E5) |
 
 ### Règle : un agent ne change jamais de modèle
@@ -201,7 +203,7 @@ Source : `configs/principal.yaml`.
    SELECT agent_id FROM llm_calls WHERE run_id = ? GROUP BY agent_id HAVING COUNT(DISTINCT modele) > 1;
    ```
 
-La répartition des petits modèles entre Mistral et Groq est un **choix de charge, pas un choix
+La répartition des petits modèles entre Mistral, Groq et le modèle local est un **choix de charge, pas un choix
 cognitif**. Le tirage est équilibré à l'intérieur de chaque profil, pour qu'on ne confonde pas l'effet du
 fournisseur avec celui du profil.
 
@@ -209,7 +211,8 @@ fournisseur avec celui du profil.
 
 Réalisée en semaine 5 à partir de ce qui a été appris ici (détail : `docs/journal/README_semaine_05.md`) :
 
-- [x] Deux adaptateurs : `openai` (Groq, Mistral) et `gemini_native` (Google) — `llm/fournisseurs.py`.
+- [x] Deux adaptateurs : `openai` (Groq, Mistral, Ollama en local) et `gemini_native` (Google) — `llm/fournisseurs.py`.
+      Un fournisseur peut être sans clé (`env_key: null`) : c'est le cas du modèle local.
 - [x] L'en-tête `User-Agent` sur toutes les requêtes.
 - [x] Une limite de débit **par modèle** (`limites:` dans `configs/models.yaml`) : requêtes et tokens par
       minute, requêtes par jour. Le compteur du jour est gardé d'un run à l'autre dans

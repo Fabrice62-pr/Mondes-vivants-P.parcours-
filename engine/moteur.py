@@ -42,6 +42,7 @@ from .agents import (ATTENTE_OUVERTURE, DOMICILE, EN_FILE, EN_ROUTE, SUR_PLACE, 
                      Institutionnel)
 from .caisse import Caisse
 from llm import prompts
+from llm.fournisseurs import Fournisseur
 from llm.passerelle import Passerelle, Requete
 
 from .config import ROOT, charger_modeles, charger_monde, echeance, empreinte, version_code
@@ -80,6 +81,29 @@ class Echange:
     rappel: tuple | None
 
 
+def _modeles_locaux_absents(cfg: dict, modeles: dict, passerelle) -> set:
+    """Petits modèles locaux (fournisseur sans clé, ex. Ollama) injoignables au démarrage du run.
+
+    Ils sont retirés de la répartition AVANT l'attribution : aucun agent ne change de modèle en cours de
+    run (A5). La table d'attribution de run.started montre la répartition réellement utilisée."""
+    if not cfg["llm"].get("actif", False):
+        return set()
+    fournisseurs = getattr(passerelle, "fournisseurs", None) if passerelle is not None else \
+        {n: Fournisseur(n, p) for n, p in modeles["providers"].items()}
+    exclus = set()
+    for m in cfg["population"]["repartition_petits"]:
+        prov = modeles["providers"][modeles["models"][m]["provider"]]
+        if prov.get("env_key"):
+            continue                                  # modèle en ligne : comportement inchangé
+        f = (fournisseurs or {}).get(modeles["models"][m]["provider"])
+        if f is None or not getattr(f, "joignable", lambda: True)():
+            exclus.add(m)
+    if exclus:
+        print(f"Modèle local injoignable ({', '.join(sorted(exclus))}) : sa part est répartie entre les "
+              f"autres petits modèles pour ce run. Vérifier Ollama, ou OLLAMA_URL dans .env.")
+    return exclus
+
+
 class Simulation:
     def __init__(self, cfg: dict, graine: int | None = None, puits: list | None = None,
                  run_id: str | None = None, valider: bool = True, passerelle: Passerelle | None = None,
@@ -99,8 +123,10 @@ class Simulation:
         self._validateur_entrant = self.bus.validateur or Validateur()
         self.fab = Fabrique(self.run_id, "moteur", self.graine)
 
+        modeles = charger_modeles()
+        self.modeles_exclus = _modeles_locaux_absents(cfg, modeles, passerelle)
         self.deposants, self.employe, self.direction = construire(
-            cfg, self.monde, charger_modeles(), random.Random(f"population-{self.graine}"))
+            cfg, self.monde, modeles, random.Random(f"population-{self.graine}"), self.modeles_exclus)
         self.par_id = {a.id: a for a in self.deposants}
         self.L = cfg["llm"]
         llm_agents = {a.id: a.modele for a in [*self.deposants, self.employe, self.direction] if a.type == "llm"}

@@ -75,7 +75,7 @@
 | Catégorie | Qui | Modèles | Justification (rôle et expérience) |
 |---|---|---|---|
 | **Grand modèle** | La boulangère, le retraité, l'entrepreneur, l'employé d'agence : gpt-oss-120b (Groq, 117B). La direction : Gemma 4 31B (Google) | gpt-oss-120b, Gemma 4 31B | Leurs rôles demandent d'arbitrer entre des informations contradictoires : gérer une trésorerie, mobiliser 40 ans d'expérience de la Caisse, informer ou se taire au guichet, décider d'une communication de crise |
-| **Petit modèle** | ~75 % des déposants ordinaires | Ministral 8B (Mistral, 80 %), gpt-oss-20b (Groq, 20 %) | Déposants qui reçoivent et relaient l'information sans responsabilité particulière |
+| **Petit modèle** | ~75 % des déposants ordinaires | Ministral 8B (Mistral, 60 %), gpt-oss-20b (Groq, 15 %), Qwen2.5 7B (local, Ollama, 25 %) | Déposants qui reçoivent et relaient l'information sans responsabilité particulière |
 
 **Comparaison de taille à famille égale (A5)** : gpt-oss-120b et gpt-oss-20b sont de la même famille
 (même architecture, même entraînement), avec un rapport de taille de 117 à 21. C'est la paire la plus
@@ -91,6 +91,9 @@ fois les paramètres totaux et les paramètres actifs (5,1 et 3,6 milliards).
 - La répartition des petits modèles entre fournisseurs est un **choix de charge**. Elle est équilibrée à
   l'intérieur de chaque profil, pour que le fournisseur ne soit pas confondu avec le profil. Une mesure de
   contrôle comparera les décisions d'un même profil selon le fournisseur.
+- Si le modèle local (Ollama) ne répond pas au démarrage du run, sa part est répartie entre les autres
+  petits modèles **avant** l'attribution ; aucun agent ne change de modèle en cours de run
+  (voir `docs/Distribution.md`, § 6.6).
 - Vérification après un run (doit renvoyer 0 ligne) :
   ```sql
   SELECT agent_id FROM llm_calls WHERE run_id = ? GROUP BY agent_id HAVING COUNT(DISTINCT modele) > 1;

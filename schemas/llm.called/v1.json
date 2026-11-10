@@ -29,7 +29,8 @@
       "enum": [
         "groq",
         "mistral",
-        "google"
+        "google",
+        "local"
       ]
     },
     "modele": {

@@ -43,6 +43,8 @@ docker compose up -d
 
 # 3. Clés API : copier .env.example en .env, puis coller les clés
 copy .env.example .env
+#    Modèle local : sur le PC hôte du modèle, Ollama + « ollama pull qwen2.5:7b » ; sur l'autre PC,
+#    OLLAMA_URL dans .env (docs\Distribution.md, § 6.0). Sans Ollama joignable, sa part va aux autres modèles.
 
 # 4. Vérifications
 .venv\Scripts\python tools\validate_contracts.py   # schémas et configurations
@@ -103,7 +105,7 @@ Les agents LLM sont actifs par défaut (`llm.actif` dans `configs/principal.yaml
 
 ## Contraintes du sujet
 
-Streaming Apache Kafka · visualisation Godot · LLM 100 % gratuits (Groq, Mistral, Google AI Studio) ·
+Streaming Apache Kafka · visualisation Godot · LLM 100 % gratuits (Groq, Mistral, Google AI Studio, Qwen2.5 7B en local avec Ollama) ·
 nombre d'agents paramétrable · RAG obligatoire · modes synchrone et asynchrone · monde fictif.
 
 Les modes synchrone et asynchrone sont réunis dans un seul **traitement hybride** : dans un même run, les
